@@ -6,6 +6,7 @@ Run:  uvicorn webapp.server:app --reload --port 8760   (from the banking-iq dir)
 """
 import datetime
 import json
+import logging
 import os
 import shutil
 import sys
@@ -65,24 +66,120 @@ def _load_index():
 
 def _save_index():
     recs = sorted(STATEMENTS.values(), key=lambda r: r["uploaded_at"], reverse=True)
-    with open(_index_path(), "w") as fh:
+    tmp = _index_path() + ".tmp"
+    with open(tmp, "w") as fh:
         json.dump(recs, fh, indent=2)
+    os.replace(tmp, _index_path())   # atomic — no partial reads during a poll
 
 
 _load_index()
 
 
-def _process(pdf_path, password, extras):
-    """Run the full pipeline; return (payload, xlsx_path) or raise."""
+# ── logging → stdout (visible in the hosting platform's log stream) ──────────
+log = logging.getLogger("bankiq")
+if not log.handlers:
+    _h = logging.StreamHandler(sys.stdout)
+    _h.setFormatter(logging.Formatter("%(asctime)s [bankiq] %(message)s", "%H:%M:%S"))
+    log.addHandler(_h)
+    log.setLevel(logging.INFO)
+    log.propagate = False
+
+
+def _mem_mb():
+    """Resident memory in MB — Linux /proc (current RSS), else peak RSS."""
+    try:
+        with open("/proc/self/status") as fh:
+            for line in fh:
+                if line.startswith("VmRSS:"):
+                    return int(line.split()[1]) / 1024.0
+    except Exception:
+        pass
+    try:
+        import resource
+        rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        # ru_maxrss is bytes on macOS/BSD, kilobytes on Linux
+        return rss / (1048576.0 if sys.platform == "darwin" else 1024.0)
+    except Exception:
+        return -1.0
+
+
+def _reconcile():
+    """Make status disk-authoritative so a worker restart / second worker can't strand
+    a record: adopt persisted records, flip finished jobs (result.json present) to READY,
+    and fail jobs stuck too long (a crashed/OOM worker leaves no result)."""
+    try:
+        if os.path.exists(_index_path()):
+            with open(_index_path()) as fh:
+                for rec in json.load(fh):
+                    cur = STATEMENTS.get(rec["id"])
+                    if cur is None or cur.get("status") in (None, "PARSING", "ANALYZING", "QUEUED"):
+                        STATEMENTS[rec["id"]] = rec
+    except Exception:
+        pass
+    for sid, rec in list(STATEMENTS.items()):
+        if rec.get("status") == "READY":
+            continue
+        rp = os.path.join(DATA, sid, "result.json")
+        if os.path.exists(rp):
+            # a finished result is the ultimate truth — recover even a stale-failed record
+            try:
+                with open(rp) as fh:
+                    payload = json.load(fh)
+                s = payload.get("summary", {}) or {}
+                g = payload.get("grade", {}) or {}
+                rec.update(status="READY", name=s.get("name"), bank=s.get("bank"),
+                           period=(f"{s.get('period_start')} → {s.get('period_end')}"
+                                   if s.get("period_start") else None),
+                           grade=g.get("grade"), reason=None)
+            except Exception:
+                pass
+        elif rec.get("status") in ("PARSING", "ANALYZING", "QUEUED"):
+            try:
+                age = (datetime.datetime.now()
+                       - datetime.datetime.fromisoformat(rec["uploaded_at"])).total_seconds()
+            except Exception:
+                age = 0.0
+            if age > 1200:  # 20 min with no result → the worker restarted or was killed mid-parse
+                rec.update(status="FAILED", reason="Processing did not complete — the worker may "
+                           "have restarted or run out of memory. Try re-uploading.")
+
+
+def _process(pdf_path, password, extras, tag=""):
+    """Run the full pipeline; return (payload, xlsx_path) or raise. Logs every stage
+    with elapsed time + resident memory so progress/OOM is visible in the log stream."""
+    import time
     workdir = tempfile.mkdtemp(prefix="bankiq_")
+
+    def start(msg):
+        log.info("%s   -> %s ...", tag, msg)
+
+    def done(msg, t0):
+        log.info("%s   ok %s (%.1fs, rss %.0fMB)", tag, msg, time.time() - t0, _mem_mb())
+
+    start("parse PDF")
+    t = time.time()
     meta = parse_statement(pdf_path, password, workdir)
-    categorize_all(meta)
-    rep = build_report(meta)
-    payload = build_payload(meta, rep)
-    payload["extras"] = extras
+    n = len(meta.get("transactions") or [])
+    log.info("%s   ok parsed: %s / %s / %d txns (%.1fs, rss %.0fMB)", tag,
+             meta.get("bank"), meta.get("name"), n, time.time() - t, _mem_mb())
+
+    start("categorise transactions")
+    t = time.time(); categorize_all(meta); done("categorised", t)
+
+    start("analyse (build_report)")
+    t = time.time(); rep = build_report(meta); done("analysed", t)
+
+    start("build UI payload")
+    t = time.time(); payload = build_payload(meta, rep); payload["extras"] = extras
+    done("payload built", t)
+
     xlsx = os.path.join(workdir, "report.xlsx")
-    render(rep, xlsx)
-    add_extra_sheets(xlsx, meta, rep)
+    start("render Perfios workbook")
+    t = time.time(); render(rep, xlsx); done("workbook rendered", t)
+
+    start("add extra sheets")
+    t = time.time(); add_extra_sheets(xlsx, meta, rep); done("extra sheets added", t)
+
     return payload, xlsx
 
 
@@ -107,6 +204,7 @@ def logo():
 
 @app.get("/api/statements")
 def list_statements():
+    _reconcile()
     return sorted(
         [{k: r[k] for k in ("id", "filename", "uploaded_at", "status", "name",
                             "bank", "period", "grade", "reason")}
@@ -131,6 +229,8 @@ async def upload(
     pdf_path = os.path.join(sdir, "source.pdf")
     with open(pdf_path, "wb") as fh:
         shutil.copyfileobj(file.file, fh)
+    log.info("%s == UPLOAD '%s' (%.1fMB) pw=%s", sid[:6], file.filename,
+             os.path.getsize(pdf_path) / 1048576, "yes" if password else "no")
 
     rec = {
         "id": sid, "filename": file.filename,
@@ -154,13 +254,17 @@ async def upload(
 
 def _run_processing(sid, password, extras):
     """Parse -> categorise -> analyse -> render, off the request thread; updates the record."""
+    import time
+    tag = sid[:6]
     rec = STATEMENTS.get(sid)
     if not rec:
         return
     sdir = os.path.join(DATA, sid)
     pdf_path = os.path.join(sdir, "source.pdf")
+    t0 = time.time()
+    log.info("%s == processing '%s' started (rss %.0fMB)", tag, rec.get("filename"), _mem_mb())
     try:
-        payload, xlsx = _process(pdf_path, password or None, extras)
+        payload, xlsx = _process(pdf_path, password or None, extras, tag=tag)
         with open(os.path.join(sdir, "result.json"), "w") as fh:
             json.dump(payload, fh)
         shutil.copy(xlsx, os.path.join(sdir, "report.xlsx"))
@@ -168,6 +272,8 @@ def _run_processing(sid, password, extras):
         rec.update(status="READY", name=s["name"], bank=s["bank"],
                    period=f"{s['period_start']} → {s['period_end']}",
                    grade=payload["grade"]["grade"], reason=None)
+        log.info("%s == DONE -> READY '%s' in %.1fs (rss %.0fMB)", tag, s["name"],
+                 time.time() - t0, _mem_mb())
     except ValueError as e:
         msg = str(e)
         if "password" in msg.lower():
@@ -180,8 +286,10 @@ def _run_processing(sid, password, extras):
             rec.update(status="EXTRACTION_SUSPECT", reason=msg)
         else:
             rec.update(status="FAILED", reason=msg)
+        log.info("%s == %s in %.1fs: %s", tag, rec["status"], time.time() - t0, msg)
     except Exception as e:
         rec.update(status="FAILED", reason=f"{type(e).__name__}: {e}")
+        log.error("%s == FAILED in %.1fs: %s: %s", tag, time.time() - t0, type(e).__name__, e)
         traceback.print_exc()
     _save_index()
 
@@ -194,7 +302,7 @@ def retry_password(sid: str, password: str = Form(...)):
     sdir = os.path.join(DATA, sid)
     pdf_path = os.path.join(sdir, "source.pdf")
     try:
-        payload, xlsx = _process(pdf_path, password, {})
+        payload, xlsx = _process(pdf_path, password, {}, tag=sid[:6])
         with open(os.path.join(sdir, "result.json"), "w") as fh:
             json.dump(payload, fh)
         shutil.copy(xlsx, os.path.join(sdir, "report.xlsx"))
@@ -210,6 +318,7 @@ def retry_password(sid: str, password: str = Form(...)):
 
 @app.get("/api/statements/{sid}")
 def get_statement(sid: str):
+    _reconcile()
     sdir = os.path.join(DATA, sid)
     p = os.path.join(sdir, "result.json")
     if not os.path.exists(p):
@@ -253,3 +362,6 @@ def delete_statement(sid: str):
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 if os.path.isdir(os.path.join(SPA, "assets")):
     app.mount("/assets", StaticFiles(directory=os.path.join(SPA, "assets")), name="spa-assets")
+
+log.info("BankIQ server ready — SPA=%s, %d statement(s) on disk, rss %.0fMB",
+         os.path.exists(os.path.join(SPA, "index.html")), len(STATEMENTS), _mem_mb())

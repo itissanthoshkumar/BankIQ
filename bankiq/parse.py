@@ -69,7 +69,17 @@ def _rows_from_words(page, ytol=2.6):
             rows[-1][1].append(w)
         else:
             rows.append([w["top"], [w]])
-    return [(top, sorted(ws, key=lambda w: w["x0"])) for top, ws in rows]
+    out = [(top, sorted(ws, key=lambda w: w["x0"])) for top, ws in rows]
+    _flush(page)   # release pdfplumber's per-page cache — it balloons over many pages
+    return out
+
+
+def _flush(page):
+    """Free a pdfplumber page's cached objects (keeps peak memory bounded on big PDFs)."""
+    try:
+        page.flush_cache()
+    except Exception:
+        pass
 
 
 # --------------------------------------------------------------- Union Bank
@@ -135,6 +145,7 @@ def parse_union_bank(pdf):
         pend = None
         for page in doc.pages:
             text = page.extract_text() or ""
+            _flush(page)
             for line in text.splitlines():
                 line = line.strip()
                 m = _UBI_TXN.match(line)
@@ -305,6 +316,7 @@ def parse_sbi(pdf):
 
         for page in doc.pages:
             text = page.extract_text() or ""
+            _flush(page)
             for line in text.splitlines():
                 line = line.strip()
                 if not line:
@@ -394,7 +406,11 @@ def parse_sbi_soa(pdf):
             meta["name"] = re.sub(r"\s+", " ", m.group(1)).strip()
         m = re.search(r"Account\s*(?:Number|No)\.?\s*:?\s*([0-9]{9,})", head)
         if not m:
-            alltext = "\n".join((p.extract_text() or "") for p in doc.pages)
+            _parts = []
+            for p in doc.pages:
+                _parts.append(p.extract_text() or "")
+                _flush(p)
+            alltext = "\n".join(_parts)
             m = re.search(r"Account\s*(?:Number|No)\.?\s*:?\s*([0-9]{9,})", alltext)
         if m:
             meta["account_no"] = m.group(1)
@@ -417,7 +433,9 @@ def parse_sbi_soa(pdf):
                 pass
 
         for page in doc.pages:
-            for line in (page.extract_text() or "").splitlines():
+            text = page.extract_text() or ""
+            _flush(page)
+            for line in text.splitlines():
                 line = line.strip()
                 if not line or _SOA_TYPE.match(line):
                     continue
@@ -486,7 +504,9 @@ def parse_canara(pdf):
                 pass
 
         for page in doc.pages:
-            for line in (page.extract_text() or "").splitlines():
+            text = page.extract_text() or ""
+            _flush(page)
+            for line in text.splitlines():
                 line = line.strip()
                 if not line:
                     continue
@@ -856,6 +876,7 @@ def parse_statement(pdf_path, password=None, workdir=None):
         sampled = 0
         for pg in doc.pages[:8]:
             sampled += len((pg.extract_text() or "").strip())
+            _flush(pg)
             if sampled > 60:
                 break
         if sampled <= 60:
