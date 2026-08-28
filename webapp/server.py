@@ -10,6 +10,7 @@ import os
 import shutil
 import sys
 import tempfile
+import threading
 import traceback
 import uuid
 
@@ -141,6 +142,23 @@ async def upload(
 
     extras = {"applicant_name": applicant_name or None, "reference_id": reference_id or None,
               "proposed_emi": proposed_emi or None, "product": product or None}
+    _save_index()  # persist the PARSING record before the (possibly slow) processing
+    # Process in a background thread and return immediately. Large statements
+    # (100+ pages / 1000+ txns) take 30-60s to parse + render the workbook, which
+    # would otherwise exceed the proxy's request timeout on hosted deployments.
+    # The frontend polls the statement list until this flips PARSING -> READY.
+    threading.Thread(target=_run_processing, args=(sid, password or None, extras),
+                     daemon=True).start()
+    return rec
+
+
+def _run_processing(sid, password, extras):
+    """Parse -> categorise -> analyse -> render, off the request thread; updates the record."""
+    rec = STATEMENTS.get(sid)
+    if not rec:
+        return
+    sdir = os.path.join(DATA, sid)
+    pdf_path = os.path.join(sdir, "source.pdf")
     try:
         payload, xlsx = _process(pdf_path, password or None, extras)
         with open(os.path.join(sdir, "result.json"), "w") as fh:
@@ -166,7 +184,6 @@ async def upload(
         rec.update(status="FAILED", reason=f"{type(e).__name__}: {e}")
         traceback.print_exc()
     _save_index()
-    return rec
 
 
 @app.post("/api/statements/{sid}/password")

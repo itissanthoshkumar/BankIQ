@@ -36,9 +36,11 @@ export default function Upload() {
     fd.append("file", file);
     ["password", "applicant_name", "reference_id", "proposed_emi", "product"].forEach((k) => fd.append(k, f.current[k] || ""));
     let r;
-    try { r = await api.upload(fd); } catch { setBusy(false); setErr("Upload failed — is the server running?"); return; }
-    if (r.status === "READY") { location.hash = "#/statement/" + r.id; }
-    else { setBusy(false); setErr(`${r.status.replace(/_/g, " ")}${r.reason ? " — " + r.reason : ""}`); }
+    try { r = await api.upload(fd); }
+    catch (e) { setBusy(false); setErr(`Upload failed — ${e?.message || "is the server running?"}`); return; }
+    // processing runs in the background; land on the list, which polls PARSING → READY
+    if (r.id) { location.hash = "#/"; }
+    else { setBusy(false); setErr(`${(r.status || "error").replace(/_/g, " ")}${r.reason ? " — " + r.reason : ""}`); }
   };
 
   return (

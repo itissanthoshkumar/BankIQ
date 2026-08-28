@@ -4,7 +4,10 @@ const J = (r) => r.json();
 export const api = {
   list: () => fetch("/api/statements").then(J),
   get: (id) => fetch("/api/statements/" + id).then(async (r) => ({ ok: r.ok, status: r.status, body: await r.json() })),
-  upload: (fd) => fetch("/api/upload", { method: "POST", body: fd }).then(J),
+  upload: (fd) => fetch("/api/upload", { method: "POST", body: fd }).then(async (r) => {
+    if (!r.ok) { const t = await r.text().catch(() => ""); throw new Error(`server error ${r.status}${t ? " — " + t.slice(0, 140) : ""}`); }
+    return r.json();
+  }),
   retry: (id, pw) => { const fd = new FormData(); fd.append("password", pw); return fetch(`/api/statements/${id}/password`, { method: "POST", body: fd }).then(J); },
   del: (id) => fetch("/api/statements/" + id, { method: "DELETE" }).then(J),
   xlsx: (id) => `/api/statements/${id}/report.xlsx`,
