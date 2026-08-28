@@ -1,0 +1,17 @@
+# Render Blueprint for BankIQ.
+# Deploy: Render Dashboard → New + → Blueprint → pick this repo.
+# (Or configure a Web Service manually with the build/start commands below.)
+services:
+  - type: web
+    name: bankiq
+    runtime: python
+    plan: free
+    region: singapore          # closest to India; change if you prefer another region
+    branch: main
+    buildCommand: pip install -r requirements.txt
+    # bind 0.0.0.0:$PORT so Render can route to it (never 127.0.0.1 or a fixed port)
+    startCommand: python -m uvicorn webapp.server:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /
+    # NOTE: the Free plan has an ephemeral filesystem — uploaded statements in
+    # webapp/data/ are wiped on every deploy/restart. For persistence, upgrade the
+    # instance and attach a Disk mounted at webapp/data.

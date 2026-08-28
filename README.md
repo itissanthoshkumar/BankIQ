@@ -104,3 +104,24 @@ python3 validate.py
 
 Regenerates the three sample outputs and diffs every sheet against the
 reference workbooks in `~/Downloads`.
+
+## Deploy on Render
+
+The React SPA is pre-built and committed (`webapp/spa/`), so Render only needs
+Python — no Node build step. A [`render.yaml`](render.yaml) blueprint is included.
+
+**Blueprint (one-click):** Render Dashboard → **New +** → **Blueprint** → pick this
+repo → **Apply**.
+
+**Or configure a Web Service manually:**
+
+| Setting | Value |
+| --- | --- |
+| Language | Python 3 |
+| Build command | `pip install -r requirements.txt` |
+| Start command | `python -m uvicorn webapp.server:app --host 0.0.0.0 --port $PORT` |
+| Plan | Free |
+
+Notes: the Free plan filesystem is **ephemeral** — uploaded statements in
+`webapp/data/` are cleared on each deploy/restart (attach a Disk on a paid
+instance to persist them). Python is pinned to 3.12 via `.python-version`.

@@ -4,4 +4,3 @@ python-multipart
 pdfplumber
 pypdf
 openpyxl
-pandas
