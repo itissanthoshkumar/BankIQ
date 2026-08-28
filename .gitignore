@@ -1,0 +1,26 @@
+# ── PII: never commit real statements or generated per-customer outputs ──
+webapp/data/
+out/
+*.pdf
+samples/
+
+# ── Python ──
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# ── Node / frontend deps ──
+node_modules/
+webui/node_modules/
+
+# ── logs & scratch ──
+*.log
+webapp/reval.txt
+webapp/validate_out.txt
+
+# ── local tooling / OS ──
+.claude/settings.local.json
+**/.impeccable/hook.cache.json
+.DS_Store

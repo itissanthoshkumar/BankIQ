@@ -1,0 +1,20 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "overused-font",
+        "value": "fraunces",
+        "createdAt": "2026-08-28T06:03:31.213Z",
+        "reason": "Prayaan house design system (cred-language-theme): Fraunces is the mandated brand display face across all Prayaan projects"
+      },
+      {
+        "rule": "overused-font",
+        "value": "dm sans",
+        "createdAt": "2026-08-28T06:03:38.117Z",
+        "reason": "Prayaan house design system (cred-language-theme): DM Sans is the mandated brand body face, paired with Fraunces"
+      }
+    ]
+  }
+}

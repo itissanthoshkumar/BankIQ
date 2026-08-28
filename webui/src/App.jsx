@@ -1,0 +1,33 @@
+import { useEffect, useState } from "react";
+import Header from "./Header";
+import Statements from "./Statements";
+import Upload from "./Upload";
+import Viewer from "./Viewer";
+
+function parseHash() {
+  const h = (location.hash || "#/").replace(/^#/, "");
+  const parts = h.split("/").filter(Boolean); // ['statement','id','tab']
+  if (parts[0] === "statement") return { view: "viewer", id: parts[1], tab: parts[2] || "summary" };
+  if (parts[0] === "upload") return { view: "upload" };
+  return { view: "home" };
+}
+
+export default function App() {
+  const [r, setR] = useState(parseHash());
+  useEffect(() => {
+    const on = () => setR(parseHash());
+    window.addEventListener("hashchange", on);
+    return () => window.removeEventListener("hashchange", on);
+  }, []);
+  const routeName = r.view === "viewer" ? "viewer" : r.view;
+  return (
+    <div className="min-h-[100dvh]">
+      <Header route={routeName === "viewer" ? "" : routeName} />
+      <main className="mx-auto max-w-[1400px] px-6 py-8">
+        {r.view === "home" && <Statements />}
+        {r.view === "upload" && <Upload />}
+        {r.view === "viewer" && <Viewer id={r.id} tab={r.tab} />}
+      </main>
+    </div>
+  );
+}

@@ -1,0 +1,16 @@
+<svg viewBox="0 0 48 48" width="48" height="48" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="biq" x1="9" y1="7" x2="39" y2="42" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1e3a5f"/>
+      <stop offset=".5" stop-color="#2f7f74"/>
+      <stop offset="1" stop-color="#5cc39a"/>
+    </linearGradient>
+  </defs>
+  <g fill="url(#biq)">
+    <g transform="rotate(0 24 24)"><path d="M24 24 C16.5 20 15.5 9.5 24 5 C32.5 9.5 31.5 20 24 24 Z"/></g>
+    <g transform="rotate(120 24 24)"><path d="M24 24 C16.5 20 15.5 9.5 24 5 C32.5 9.5 31.5 20 24 24 Z"/></g>
+    <g transform="rotate(240 24 24)"><path d="M24 24 C16.5 20 15.5 9.5 24 5 C32.5 9.5 31.5 20 24 24 Z"/></g>
+  </g>
+  <circle cx="24" cy="24" r="3.4" fill="#ffffff"/>
+  <circle cx="24" cy="24" r="1.7" fill="url(#biq)"/>
+</svg>

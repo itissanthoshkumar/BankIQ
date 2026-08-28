@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "prayaanbsa",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "uvicorn", "--app-dir", "/Users/santhoshp/Documents/Claude/banking-iq", "webapp.server:app", "--port", "8760", "--host", "127.0.0.1"],
+      "port": 8760
+    }
+  ]
+}

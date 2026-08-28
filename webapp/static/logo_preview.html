@@ -1,0 +1,38 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>BankingIQ logo</title>
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+ body{margin:0;font-family:"Public Sans",system-ui,sans-serif;background:#0a0e1a;color:#e8ecf5}
+ .row{display:flex;gap:40px;align-items:center;flex-wrap:wrap;padding:34px 40px}
+ .row.light{background:#f3f5f9;color:#16191c}
+ .cell{text-align:center}
+ .cell img{display:block}
+ .cap{font-size:11px;opacity:.55;margin-top:10px;letter-spacing:.05em;text-transform:uppercase}
+ .lockup{display:flex;align-items:center;gap:16px}
+ .wm{font-weight:800;font-size:34px;letter-spacing:-.02em}
+ .wm .iq{color:#22d3ee}
+ .wm small{display:block;font-weight:600;font-size:11px;letter-spacing:.16em;opacity:.55;text-transform:uppercase}
+ h2{padding:22px 40px 0;font-weight:700;font-size:14px;letter-spacing:.04em;text-transform:uppercase;opacity:.5}
+ .badge{background:radial-gradient(circle at 50% 40%,#141a2c,#0a0e1a);border-radius:22px;padding:14px}
+</style></head><body>
+ <h2>On dark</h2>
+ <div class="row">
+   <div class="cell"><img src="/static/logo.svg" width="140" height="140"><div class="cap">mark 140</div></div>
+   <div class="cell"><img src="/static/logo.svg" width="72" height="72"><div class="cap">72</div></div>
+   <div class="cell"><img src="/static/logo.svg" width="40" height="40"><div class="cap">40 (header)</div></div>
+   <div class="cell"><img src="/static/logo.svg" width="24" height="24"><div class="cap">24 (favicon)</div></div>
+   <div class="cell"><div class="badge"><img src="/static/logo.svg" width="88" height="88"></div><div class="cap">app-tile</div></div>
+ </div>
+ <h2>Lockup</h2>
+ <div class="row">
+   <div class="lockup"><img src="/static/logo.svg" width="52" height="52">
+     <span class="wm">Banking<span class="iq">IQ</span><small>Bank Statement Analysis</small></span></div>
+ </div>
+ <h2>On light</h2>
+ <div class="row light">
+   <div class="cell"><img src="/static/logo.svg" width="120" height="120"><div class="cap">mark 120</div></div>
+   <div class="cell"><img src="/static/logo.svg" width="48" height="48"><div class="cap">48</div></div>
+   <div class="lockup" style="color:#16191c"><img src="/static/logo.svg" width="46" height="46">
+     <span class="wm">Banking<span class="iq" style="color:#0891b2">IQ</span><small>Bank Statement Analysis</small></span></div>
+ </div>
+</body></html>
