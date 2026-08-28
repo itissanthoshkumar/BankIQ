@@ -595,6 +595,89 @@ def parse_canara(pdf):
     return meta
 
 
+# ------------------------------------------ Indian Bank "Statement of Account"
+# Columns: Post Date | Value Date | Details | Chq.No. | Debit | Credit | Balance
+# Row: 10/01/26 10/01/26 <details> 4459.00 5007.60Cr  (one amount printed; balance carries Cr/Dr)
+_ISOA_ROW = re.compile(
+    r"^(\d{2}/\d{2}/\d{2})\s+(\d{2}/\d{2}/\d{2})\s+(?:(.*?)\s+)?([\d,]+\.\d{2})\s+([\d,]+\.\d{2})(cr|dr)\s*$",
+    re.I)
+
+
+def _isoa_bal(numstr, crdr):
+    v = float(numstr.replace(",", ""))
+    return v if crdr.lower() == "cr" else -v
+
+
+def parse_indian_soa(pdf):
+    meta = {"bank": "Indian Bank", "institution": "Indian Bank, India",
+            "mobile": None, "email": None, "pan": None, "account_type": None,
+            "ifsc": None, "period": None, "name": None, "address": None,
+            "account_no": None, "account_name": None}
+    raw = []
+    prev_bal = None
+    with _open(pdf) as doc:
+        head = "\n".join((doc.pages[i].extract_text() or "") for i in range(min(2, len(doc.pages))))
+        m = re.search(r"Account No\s*:\s*(\d+)", head)
+        if m:
+            meta["account_no"] = m.group(1)
+        m = re.search(r"IFSC\s*Code\s*:\s*([A-Z0-9]+)", head)
+        if m:
+            meta["ifsc"] = m.group(1)
+        m = re.search(r"Product\s*:\s*([^\n]+)", head)
+        if m:
+            prod = m.group(1).strip()
+            meta["account_type"] = "Savings Account" if re.search(r"\bSB|SAV", prod, re.I) else prod[:40]
+        m1 = re.search(r"Statement From\s*:\s*(\d{2}-[A-Za-z]{3}-\d{4})", head)
+        m2 = re.search(r"\bTo\s*:\s*(\d{2}-[A-Za-z]{3}-\d{4})", head)
+        if m1 and m2:
+            try:
+                meta["period"] = (datetime.datetime.strptime(m1.group(1), "%d-%b-%Y").date(),
+                                  datetime.datetime.strptime(m2.group(1), "%d-%b-%Y").date())
+            except ValueError:
+                pass
+        m = re.search(r"STATEMENT OF ACCOUNT\s*\n(?:INDIAN BANK\s*\n)?([A-Z][A-Za-z][^\n]*)", head)
+        if m:
+            meta["name"] = m.group(1).strip()
+
+        for page in doc.pages:
+            for line in (page.extract_text() or "").splitlines():
+                line = line.strip()
+                mb = re.match(r"(?:Brought Forward|Opening Balance)\s+([\d,]+\.\d{2})(cr|dr)\s*$", line, re.I)
+                if mb:
+                    prev_bal = _isoa_bal(mb.group(1), mb.group(2))
+                    continue
+                m = _ISOA_ROW.match(line)
+                if m:
+                    try:
+                        d = datetime.datetime.strptime(m.group(1), "%d/%m/%y").date()
+                    except ValueError:
+                        continue
+                    details = (m.group(3) or "").strip()
+                    amt = float(m.group(4).replace(",", ""))
+                    bal = _isoa_bal(m.group(5), m.group(6))
+                    if prev_bal is None:
+                        signed = amt
+                    elif abs(prev_bal + amt - bal) < 0.02:
+                        signed = amt
+                    elif abs(prev_bal - amt - bal) < 0.02:
+                        signed = -amt
+                    else:
+                        signed = amt if bal >= prev_bal else -amt   # gap; best-effort by delta sign
+                    prev_bal = bal
+                    raw.append({"date": d, "frags": [details] if details else [],
+                                "amount": signed, "balance": bal, "cheque": None})
+                elif raw and not re.search(
+                        r"Brought Forward|Carried Forward|Statement Summary|Post Date|Value Date|"
+                        r"In Case Your|Page No|STATEMENT OF ACCOUNT|Account No\b", line):
+                    raw[-1]["frags"].append(line)
+    txns = [{"date": r["date"], "desc": _join_frag(r["frags"]) or '""', "amount": r["amount"],
+             "balance": r["balance"], "cheque": None} for r in raw]
+    if not meta["period"] and txns:
+        meta["period"] = (min(t["date"] for t in txns), max(t["date"] for t in txns))
+    meta["transactions"] = txns
+    return meta
+
+
 # --------------------------------------------------------------- HDFC
 _HDFC_DATE = re.compile(r"^\d{2}/\d{2}/\d{2}$")
 _HDFC_AMT = re.compile(r"^[\d,]+\.\d{2}$")
@@ -956,6 +1039,8 @@ def parse_statement(pdf_path, password=None, workdir=None):
         meta = parse_hdfc(dec)
     elif "Customer/CIF ID" in first or re.search(r"IFSC\s+UBIN", first):
         meta = parse_union_bank(dec)
+    elif re.search(r"IFSC\s*Code\s*:?\s*IDIB", first) and "Post Date" in first and "Value Date" in first:
+        meta = parse_indian_soa(dec)          # Indian Bank net-banking "Statement of Account"
     else:
         # any other bank -> generic column-detection parser
         meta = parse_generic(dec)
