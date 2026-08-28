@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { UploadSimple, FilePdf, X, CircleNotch, ShieldCheck, CheckCircle, ArrowRight } from "@phosphor-icons/react";
 import { api } from "./api";
-import { stagger, rise, spring } from "./ui";
+import { stagger, rise, spring, haptic } from "./ui";
 
 const BANKS = ["Union Bank", "City Union", "SBI", "HDFC", "+ generic"];
 
@@ -27,7 +27,7 @@ export default function Upload() {
   const fi = useRef();
   const f = useRef({});
 
-  const pick = (x) => { if (x && x.type === "application/pdf") { setFile(x); setErr(""); } };
+  const pick = (x) => { if (x && x.type === "application/pdf") { setFile(x); setErr(""); haptic(12); } };
 
   const submit = async () => {
     if (!file) return;
@@ -124,7 +124,10 @@ export default function Upload() {
 
             <motion.button
               disabled={!file || busy} onClick={submit}
+              whileHover={file && !busy ? { y: -1.5 } : {}}
               whileTap={file && !busy ? { scale: 0.98 } : {}}
+              onTapStart={() => { if (file && !busy) haptic(16); }}
+              transition={{ type: "spring", stiffness: 400, damping: 22 }}
               className="focusable mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-zinc-900 px-4 py-3 text-[14px] font-semibold text-white shadow-soft transition-colors enabled:hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {busy ? <><CircleNotch size={17} weight="bold" className="animate-spin" /> Parsing statement…</> : <>Process statement <ArrowRight size={16} weight="bold" /></>}

@@ -10,7 +10,7 @@
           "src/Statements.jsx"
         ],
         "createdAt": "2026-08-28T10:29:07.736Z",
-        "reason": "Claude: false positive — base gray icons/muted text sit on the white list rows; the heuristic mis-pairs them with adjacent colored status pills and hover:bg-* states that never co-occur (hover also recolors the text). Verified no real gray-on-colored-bg text: pills use tone-matched text, avatars/grades use white-on-color."
+        "reason": "Delete/action buttons: resting text-zinc-500 sits on white; hover applies bg-rose-50 AND text-rose-600 together, so gray never sits on the rose bg. False positive."
       },
       {
         "rule": "gray-on-color",

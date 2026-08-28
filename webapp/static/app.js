@@ -1,4 +1,4 @@
-/* BankingIQ single-page app — vanilla JS, renders from the JSON API. */
+/* BankIQ single-page app — vanilla JS, renders from the JSON API. */
 const app = document.getElementById("app");
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 

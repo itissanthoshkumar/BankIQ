@@ -9,6 +9,24 @@ export const rise = {
   show: { opacity: 1, y: 0, transition: spring },
 };
 
+// ── tactile feedback ─────────────────────────────────────────────
+// real haptic buzz on devices that support it (mobile); silent no-op elsewhere
+export const haptic = (ms = 7) => { try { navigator.vibrate && navigator.vibrate(ms); } catch {} };
+// spread onto any framer-motion element: springy hover-lift + press-scale + a haptic tick
+export const tactile = {
+  whileHover: { y: -1.5 },
+  whileTap: { scale: 0.94 },
+  onTapStart: () => haptic(),
+  transition: { type: "spring", stiffness: 400, damping: 22 },
+};
+// same, but a gentler lift for large surfaces (rows, cards)
+export const tactileSoft = {
+  whileHover: { y: -2 },
+  whileTap: { scale: 0.985 },
+  onTapStart: () => haptic(5),
+  transition: { type: "spring", stiffness: 320, damping: 26 },
+};
+
 // count-up number (spring-eased), respects reduced motion
 export function Count({ value, dec = 0, prefix = "", suffix = "", className = "" }) {
   const reduce = useReducedMotion();

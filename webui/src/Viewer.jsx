@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, DownloadSimple, FileXls, BracketsCurly } from "@phosphor-icons/react";
 import { api, fmtDate } from "./api";
-import { Skeleton } from "./ui";
+import { Skeleton, haptic, tactile } from "./ui";
 import { TABS, TAB_MAP } from "./tabs";
 
 const gradeTone = { A: "bg-emerald-600", B: "bg-lime-600", C: "bg-amber-500", D: "bg-orange-600", E: "bg-rose-600" };
@@ -36,9 +36,9 @@ export default function Viewer({ id, tab }) {
           <div className="tnum text-[12.5px] text-zinc-500">{s.bank} · A/c ****{(s.account_no || "").slice(-4)} · {fmtDate(s.period_start)} → {fmtDate(s.period_end)} · {s.txn_count} txns</div>
         </div>
         <div className="flex-1" />
-        <a href={api.xlsx(id)} className="focusable inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-[12.5px] font-semibold text-zinc-700 transition-transform hover:bg-zinc-50 active:scale-[0.97]"><FileXls size={15} /> XLSX</a>
-        <a href={api.json(id)} className="focusable inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-[12.5px] font-semibold text-zinc-700 transition-transform hover:bg-zinc-50 active:scale-[0.97]"><BracketsCurly size={15} /> JSON</a>
-        <a href="#/" className="focusable inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-[12.5px] font-semibold text-zinc-700 hover:bg-zinc-50"><ArrowLeft size={14} /> All</a>
+        <motion.a href={api.xlsx(id)} {...tactile} className="focusable inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-[12.5px] font-semibold text-zinc-700 hover:bg-zinc-50"><FileXls size={15} /> XLSX</motion.a>
+        <motion.a href={api.json(id)} {...tactile} className="focusable inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-[12.5px] font-semibold text-zinc-700 hover:bg-zinc-50"><BracketsCurly size={15} /> JSON</motion.a>
+        <motion.a href="#/" {...tactile} className="focusable inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-[12.5px] font-semibold text-zinc-700 hover:bg-zinc-50"><ArrowLeft size={14} /> All</motion.a>
       </div>
 
       {suspect && <div className="mb-4 rounded-xl bg-rose-50 px-4 py-3 text-[13px] font-medium text-rose-700 ring-1 ring-inset ring-rose-200">Extraction suspect — balance continuity did not fully reconcile. Review before use.</div>}
@@ -50,10 +50,10 @@ export default function Viewer({ id, tab }) {
             return (
               <div key={k}>
                 {head && <div className="px-3 pb-1 pt-3 text-[10px] font-bold uppercase tracking-[0.12em] text-zinc-400">{head}</div>}
-                <a href={`#/statement/${id}/${k}`} className={`focusable relative block rounded-lg px-3 py-2 text-[13.5px] font-medium transition-colors ${k === active ? "bg-accent-soft text-accent-fg" : "text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900"}`}>
+                <motion.a href={`#/statement/${id}/${k}`} onTapStart={() => haptic(5)} whileTap={{ scale: 0.97 }} className={`focusable relative block rounded-lg px-3 py-2 text-[13.5px] font-medium transition-colors ${k === active ? "bg-accent-soft text-accent-fg" : "text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900"}`}>
                   {k === active && <motion.span layoutId="tabmark" className="absolute inset-y-1.5 left-0 w-[3px] rounded-full bg-accent" />}
                   {label}
-                </a>
+                </motion.a>
               </div>
             );
           })}

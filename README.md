@@ -1,4 +1,4 @@
-# BankingIQ — bank statement → analysis
+# BankIQ — bank statement → analysis
 
 Converts an Indian bank-statement PDF into the multi-tab Excel analysis format
 (Perfios-style BSA report): Analysis, Derived Analysis, EOD Balance, Top-5

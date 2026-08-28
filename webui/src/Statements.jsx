@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Plus, MagnifyingGlass, ArrowRight, Trash, Key } from "@phosphor-icons/react";
 import { api, fmtDate, initials, avColor } from "./api";
-import { Card, Skeleton, Empty, stagger, rise, spring } from "./ui";
+import { Card, Skeleton, Empty, stagger, rise, spring, haptic, tactile } from "./ui";
 
 const statusTone = {
   READY: "bg-emerald-50 text-emerald-700 ring-emerald-200",
@@ -38,9 +38,9 @@ export default function Statements() {
           <h1 className="text-3xl font-extrabold tracking-tight text-zinc-900">Statements</h1>
           <p className="mt-1 text-sm text-zinc-500">Parsed bank statements and their analysis.</p>
         </div>
-        <a href="#/upload" className="focusable inline-flex items-center gap-2 rounded-xl bg-zinc-900 px-4 py-2.5 text-sm font-semibold text-white shadow-soft transition-transform hover:bg-zinc-800 active:scale-[0.98]">
+        <motion.a href="#/upload" {...tactile} className="focusable inline-flex items-center gap-2 rounded-xl bg-zinc-900 px-4 py-2.5 text-sm font-semibold text-white shadow-soft hover:bg-zinc-800">
           <Plus size={17} weight="bold" /> Upload statement
-        </a>
+        </motion.a>
       </div>
 
       <div className="mb-4 flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2 shadow-soft focus-within:ring-2 focus-within:ring-accent-ring/60 sm:max-w-xs">
@@ -59,7 +59,7 @@ export default function Statements() {
           </div>
           <motion.div variants={stagger} initial="hidden" animate="show" className="divide-y divide-zinc-100">
             {filtered.map((r) => (
-              <motion.div key={r.id} variants={rise} className="grid grid-cols-2 items-center gap-4 px-5 py-3.5 transition-colors hover:bg-zinc-50/70 md:grid-cols-[1.6fr_1fr_1.1fr_0.7fr_0.5fr_auto]">
+              <motion.div key={r.id} variants={rise} whileHover={{ y: -1 }} className="grid grid-cols-2 items-center gap-4 px-5 py-3.5 transition-colors hover:bg-zinc-50/70 md:grid-cols-[1.6fr_1fr_1.1fr_0.7fr_0.5fr_auto]">
                 <div className="col-span-2 flex items-center gap-3 md:col-span-1">
                   <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-[12px] font-bold text-white" style={{ background: avColor(r.name || r.filename) }}>{initials(r.name || r.filename)}</span>
                   <span className="truncate font-semibold text-zinc-800">{r.name || r.filename}</span>
@@ -75,9 +75,9 @@ export default function Statements() {
                 </div>
                 <span>{r.grade ? <span className={`grid h-7 w-7 place-items-center rounded-lg text-[13px] font-extrabold text-white ${gradeTone[r.grade]}`}>{r.grade}</span> : <span className="text-zinc-300">—</span>}</span>
                 <div className="col-span-2 flex justify-end gap-1.5 md:col-span-1">
-                  {r.status === "READY" && <a href={`#/statement/${r.id}`} className="focusable inline-flex items-center gap-1 rounded-lg border border-zinc-200 px-3 py-1.5 text-[12.5px] font-semibold text-zinc-700 transition-transform hover:bg-zinc-50 active:scale-[0.97]">View <ArrowRight size={13} weight="bold" /></a>}
-                  {r.status === "NEEDS_PASSWORD" && <button onClick={() => retry(r.id)} className="focusable inline-flex items-center gap-1 rounded-lg border border-zinc-200 px-3 py-1.5 text-[12.5px] font-semibold text-zinc-700 hover:bg-zinc-50"><Key size={13} /> Password</button>}
-                  <button onClick={() => del(r.id)} aria-label="Delete" className="focusable grid h-8 w-8 place-items-center rounded-lg border border-zinc-200 text-zinc-500 transition-colors hover:bg-rose-50 hover:text-rose-600"><Trash size={14} /></button>
+                  {r.status === "READY" && <motion.a href={`#/statement/${r.id}`} {...tactile} className="focusable inline-flex items-center gap-1 rounded-lg border border-zinc-200 px-3 py-1.5 text-[12.5px] font-semibold text-zinc-700 hover:bg-zinc-50">View <ArrowRight size={13} weight="bold" /></motion.a>}
+                  {r.status === "NEEDS_PASSWORD" && <motion.button {...tactile} onClick={() => retry(r.id)} className="focusable inline-flex items-center gap-1 rounded-lg border border-zinc-200 px-3 py-1.5 text-[12.5px] font-semibold text-zinc-700 hover:bg-zinc-50"><Key size={13} /> Password</motion.button>}
+                  <motion.button {...tactile} onClick={() => del(r.id)} aria-label="Delete" className="focusable grid h-8 w-8 place-items-center rounded-lg border border-zinc-200 text-zinc-500 transition-colors hover:bg-rose-50 hover:text-rose-600"><Trash size={14} /></motion.button>
                 </div>
               </motion.div>
             ))}

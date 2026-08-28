@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Banking IQ — bank statement PDF -> Perfios-style analysis workbook.
+"""BankIQ — bank statement PDF -> Perfios-style analysis workbook.
 
 Usage:
     python3 bankiq_run.py <statement.pdf> [--password PW] [-o output.xlsx]
