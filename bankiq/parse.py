@@ -17,8 +17,59 @@ Transactions are in statement order; balance is the running balance after the tx
 import datetime
 import re
 
-import pdfplumber
+import fitz  # PyMuPDF — ~40x faster text/word extraction than pdfplumber
 from pypdf import PdfReader, PdfWriter
+
+
+# ── fitz-backed compatibility shim ─────────────────────────────────────────
+# Exposes the small slice of the pdfplumber API the parsers rely on
+# (doc.pages / page.extract_text() / page.extract_words()), so the tuned
+# per-bank logic runs unchanged on the much faster MuPDF engine.
+class _Page:
+    __slots__ = ("_p",)
+
+    def __init__(self, fpage):
+        self._p = fpage
+
+    def extract_text(self, ytol=2.6):
+        # rebuild text so each VISUAL row is one line (matches pdfplumber's grouping,
+        # which the per-bank regexes depend on — fitz's native get_text splits differently)
+        words = self._p.get_text("words")  # (x0, y0, x1, y1, "word", block, line, word_no)
+        if not words:
+            return ""
+        words.sort(key=lambda w: (w[1], w[0]))
+        rows = []
+        for w in words:
+            if rows and abs(w[1] - rows[-1][0]) <= ytol:
+                rows[-1][1].append(w)
+            else:
+                rows.append([w[1], [w]])
+        return "\n".join(" ".join(w[4] for w in sorted(ws, key=lambda w: w[0]))
+                         for _, ws in rows)
+
+    def extract_words(self, **_kw):
+        return [{"text": w[4], "x0": w[0], "x1": w[2], "top": w[1], "bottom": w[3]}
+                for w in self._p.get_text("words")]
+
+    def flush_cache(self):
+        pass
+
+
+class _Doc:
+    def __init__(self, path):
+        self._d = fitz.open(path)
+        self.pages = [_Page(p) for p in self._d]
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self._d.close()
+        return False
+
+
+def _open(path):
+    return _Doc(path)
 
 
 def decrypt_to(src, password, dest):
@@ -94,7 +145,7 @@ def parse_union_bank(pdf):
             "ifsc": None, "period": None, "name": None, "address": None,
             "account_no": None, "account_name": None}
     txns = []
-    with pdfplumber.open(pdf) as doc:
+    with _open(pdf) as doc:
         first = doc.pages[0].extract_text() or ""
         m = re.search(r"Name\s+(.+?)\s+Customer/CIF ID", first)
         if m:
@@ -170,7 +221,7 @@ def parse_cub(pdf):
             "ifsc": None, "period": None, "name": None, "address": None,
             "account_no": None, "account_name": None}
     txns = []
-    with pdfplumber.open(pdf) as doc:
+    with _open(pdf) as doc:
         first = doc.pages[0].extract_text() or ""
         m = re.search(r"Account No\s*:\s*(\d+)", first)
         if m:
@@ -283,7 +334,7 @@ def parse_sbi(pdf):
             "ifsc": None, "period": None, "name": None, "address": None,
             "account_no": None, "account_name": None}
     raw = []
-    with pdfplumber.open(pdf) as doc:
+    with _open(pdf) as doc:
         first = doc.pages[0].extract_text() or ""
         m = re.search(r"Statement of (.+?) \(A/c-(\S+)\) between (\d{2}/\d{2}/\d{4}) to (\d{2}/\d{2}/\d{4})", first)
         if m:
@@ -398,7 +449,7 @@ def parse_sbi_soa(pdf):
             "ifsc": None, "period": None, "name": None, "address": None,
             "account_no": None, "account_name": None}
     raw = []
-    with pdfplumber.open(pdf) as doc:
+    with _open(pdf) as doc:
         head = "\n".join((doc.pages[i].extract_text() or "") for i in range(min(3, len(doc.pages))))
         alltext = None
         m = re.search(r"As on\s+\d{2}-\d{2}-\d{4}\s*\n\s*((?:Mr|Mrs|Ms|M/s)\.?\s+[^\n]+)", head)
@@ -483,7 +534,7 @@ def parse_canara(pdf):
             "ifsc": None, "period": None, "name": None, "address": None,
             "account_no": None, "account_name": None}
     raw = []
-    with pdfplumber.open(pdf) as doc:
+    with _open(pdf) as doc:
         head = "\n".join((doc.pages[i].extract_text() or "") for i in range(min(2, len(doc.pages))))
         for key, pat in (("name", r"Customer Name\s*:\s*([^\n]+)"),
                          ("account_no", r"Account No\s*:\s*([0-9]+)"),
@@ -555,7 +606,7 @@ def parse_hdfc(pdf):
             "ifsc": None, "period": None, "name": None, "address": None,
             "account_no": None, "account_name": None}
     txns = []
-    with pdfplumber.open(pdf) as doc:
+    with _open(pdf) as doc:
         first = doc.pages[0].extract_text() or ""
         m = re.search(r"AccountNo\s*:?\s*(\d+)", first)
         if m:
@@ -716,7 +767,7 @@ def parse_generic(pdf):
             "mobile": None, "email": None, "pan": None, "account_type": None,
             "ifsc": None, "period": None, "name": None, "address": None,
             "account_no": None, "account_name": None}
-    with pdfplumber.open(pdf) as doc:
+    with _open(pdf) as doc:
         first = doc.pages[0].extract_text() or ""
         # best-effort metadata — the account's OWN IFSC (labelled), never a counterparty's
         m = re.search(r"(?:RTGS/NEFT\s*)?IFSC\s*(?:Code)?\s*[:\-]?\s*([A-Z]{4}0[A-Z0-9]{6})", first)
@@ -869,7 +920,7 @@ def parse_statement(pdf_path, password=None, workdir=None):
     workdir = workdir or tempfile.mkdtemp(prefix="bankiq_")
     dec = os.path.join(workdir, "decrypted.pdf")
     decrypt_to(pdf_path, password, dec)
-    with pdfplumber.open(dec) as doc:
+    with _open(dec) as doc:
         first = doc.pages[0].extract_text() or ""
         # scanned / image-only PDF: no usable text layer anywhere -> exclude cleanly
         # (these need OCR, which BankIQ does not do — skip rather than error out)
