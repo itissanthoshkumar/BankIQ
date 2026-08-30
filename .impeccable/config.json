@@ -23,6 +23,15 @@
         ],
         "createdAt": "2026-08-30T10:28:05.619Z",
         "reason": "Reviewed: narrative bullets are zinc-700 on zinc-50 (near-white, high contrast) and lifestyle amounts are zinc-500 on a white card — colored elements are separate spans. The one real case (QC warn cards) was fixed with amber-700/80 labels."
+      },
+      {
+        "rule": "gray-on-color",
+        "value": "*",
+        "files": [
+          "webui/src/Statements.jsx"
+        ],
+        "createdAt": "2026-08-30T13:25:45.211Z",
+        "reason": "Delete button: resting text-zinc-500 sits on white; hover applies bg-rose-50 AND text-rose-600 together, so gray never sits on the rose bg. Triaged twice before; re-fires on line shifts under this path scope."
       }
     ]
   }

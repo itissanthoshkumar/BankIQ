@@ -2,14 +2,27 @@ import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, DownloadSimple, FileXls, BracketsCurly } from "@phosphor-icons/react";
 import { api, fmtDate } from "./api";
-import { Skeleton, haptic, tactile } from "./ui";
+import { Skeleton, haptic, tactile, ExpiryChip, ExpiryModal, useNow, leftMs, warnMs } from "./ui";
 import { TABS, TAB_MAP } from "./tabs";
 
 const gradeTone = { A: "bg-emerald-600", B: "bg-lime-600", C: "bg-amber-500", D: "bg-orange-600", E: "bg-rose-600" };
 
-export default function Viewer({ id, tab }) {
+export default function Viewer({ id, tab, retention = 60 }) {
   const [res, setRes] = useState(null);
+  const [dismissed, setDismissed] = useState({});
+  const now = useNow(1000);
   useEffect(() => { setRes(null); api.get(id).then(setRes); }, [id]);
+
+  const rec = res && res.ok ? res.body._record : null;
+  const extend = async () => {
+    try {
+      const r = await api.extend(id);
+      setRes((cur) => (cur && cur.ok ? { ...cur, body: { ...cur.body, _record: { ...cur.body._record, ...r } } } : cur));
+    } catch { /* expired — the next fetch will 404 */ }
+  };
+  const left = rec ? leftMs(rec, now) : null;
+  const showWarn = rec && left != null && left > 0 && left <= warnMs(retention) && !dismissed[`${id}:${rec.expires_at}`];
+  const dismissKey = rec ? `${id}:${rec.expires_at}` : "";
 
   if (!res) return <div className="space-y-4"><Skeleton className="h-14 w-full" /><div className="grid gap-4 md:grid-cols-[220px_1fr]"><Skeleton className="h-96" /><Skeleton className="h-96" /></div></div>;
   if (!res.ok) return (
@@ -36,6 +49,7 @@ export default function Viewer({ id, tab }) {
           <div className="tnum text-[12.5px] text-zinc-500">{s.bank} · A/c ****{(s.account_no || "").slice(-4)} · {fmtDate(s.period_start)} → {fmtDate(s.period_end)} · {s.txn_count} txns</div>
         </div>
         <div className="flex-1" />
+        <ExpiryChip rec={rec} now={now} retention={retention} onExtend={extend} />
         <motion.a href={api.xlsx(id)} {...tactile} className="focusable inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-[12.5px] font-semibold text-zinc-700 hover:bg-zinc-50"><FileXls size={15} /> XLSX</motion.a>
         <motion.a href={api.json(id)} {...tactile} className="focusable inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-[12.5px] font-semibold text-zinc-700 hover:bg-zinc-50"><BracketsCurly size={15} /> JSON</motion.a>
         <motion.a href="#/" {...tactile} className="focusable inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-[12.5px] font-semibold text-zinc-700 hover:bg-zinc-50"><ArrowLeft size={14} /> All</motion.a>
@@ -72,6 +86,18 @@ export default function Viewer({ id, tab }) {
           </AnimatePresence>
         </div>
       </div>
+
+      <AnimatePresence>
+        {showWarn && (
+          <ExpiryModal
+            name={s.name}
+            msLeft={left}
+            retention={retention}
+            onExtend={() => { extend(); setDismissed((d) => ({ ...d, [dismissKey]: true })); }}
+            onDismiss={() => setDismissed((d) => ({ ...d, [dismissKey]: true }))}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -31,7 +31,7 @@ export default function App() {
         {r.view === "home" && <Statements retention={retention} />}
         {r.view === "upload" && <Upload retention={retention} />}
         {r.view === "guide" && <Guide />}
-        {r.view === "viewer" && <Viewer id={r.id} tab={r.tab} />}
+        {r.view === "viewer" && <Viewer id={r.id} tab={r.tab} retention={retention} />}
       </main>
     </div>
   );

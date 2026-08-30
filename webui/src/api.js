@@ -11,6 +11,7 @@ export const api = {
   }),
   retry: (id, pw) => { const fd = new FormData(); fd.append("password", pw); return fetch(`/api/statements/${id}/password`, { method: "POST", body: fd }).then(J); },
   del: (id) => fetch("/api/statements/" + id, { method: "DELETE" }).then(J),
+  extend: (id) => fetch(`/api/statements/${id}/extend`, { method: "POST" }).then(J),
   xlsx: (id) => `/api/statements/${id}/report.xlsx`,
   json: (id) => `/api/statements/${id}/result.json`,
 };

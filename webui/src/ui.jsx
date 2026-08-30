@@ -1,6 +1,6 @@
 import { motion, useMotionValue, useTransform, animate, useReducedMotion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
-import { Question, ShieldCheck } from "@phosphor-icons/react";
+import { Question, ShieldCheck, Timer } from "@phosphor-icons/react";
 import { num } from "./api";
 
 export const spring = { type: "spring", stiffness: 120, damping: 20 };
@@ -86,6 +86,70 @@ export function Help({ title, what, how, ex, className = "" }) {
         </div>
       )}
     </span>
+  );
+}
+
+// ── retention countdown ─────────────────────────────────────────
+export function useNow(ms = 1000) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), ms); return () => clearInterval(t); }, [ms]);
+  return now;
+}
+
+export const leftMs = (rec, now) => (rec && rec.expires_at ? rec.expires_at * 1000 - now : null);
+// warn at 3 minutes (or half the retention window when it is shorter than 6 min)
+export const warnMs = (retentionMin = 60) => Math.min(3 * 60000, (retentionMin * 60000) / 2);
+
+export function fmtLeft(ms) {
+  if (ms == null) return null;
+  const s = Math.max(0, Math.floor(ms / 1000));
+  if (s >= 3600) return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
+  if (s >= 180) return `${Math.ceil(s / 60)}m`;
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+// countdown pill: "deleted in 42m" — turns red + pulses under the warning
+// threshold; optional +Nm button extends the retention timer
+export function ExpiryChip({ rec, now, retention = 60, onExtend, className = "" }) {
+  const left = leftMs(rec, now);
+  if (left == null) return null;
+  const warn = left <= warnMs(retention);
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ring-inset ${warn ? "bg-rose-50 text-rose-700 ring-rose-200" : "bg-zinc-100 text-zinc-600 ring-zinc-200"} ${className}`}>
+      {warn && <motion.span animate={{ opacity: [1, 0.25, 1] }} transition={{ repeat: Infinity, duration: 1 }} className="h-1.5 w-1.5 shrink-0 rounded-full bg-rose-500" />}
+      <Timer size={12} weight="bold" className="shrink-0" />
+      <span className="tnum whitespace-nowrap">deleted in {fmtLeft(left)}</span>
+      {onExtend && (
+        <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); haptic(10); onExtend(); }}
+          aria-label={`Keep for ${retention} more minutes`}
+          className={`focusable -my-0.5 -mr-1 rounded-full px-1.5 py-0.5 text-[10px] font-bold transition-colors ${warn ? "bg-white text-rose-700 hover:bg-rose-100" : "bg-white text-accent-fg hover:bg-accent-soft"}`}>
+          +{retention}m
+        </button>
+      )}
+    </span>
+  );
+}
+
+// blocking confirmation shown once the warning threshold is crossed
+export function ExpiryModal({ name, msLeft, retention = 60, onExtend, onDismiss }) {
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 grid place-items-center bg-zinc-900/40 p-4" onClick={onDismiss}>
+      <motion.div initial={{ scale: 0.92, y: 12 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, opacity: 0 }}
+        transition={{ type: "spring", stiffness: 260, damping: 22 }} onClick={(e) => e.stopPropagation()}
+        role="alertdialog" aria-label="Statement about to be deleted"
+        className="w-full max-w-sm rounded-3xl border border-rose-200 bg-white p-6 text-center shadow-diffuse">
+        <div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-rose-50 text-rose-600"><Timer size={26} weight="bold" /></div>
+        <h3 className="mt-3 text-[16px] font-extrabold text-zinc-900">About to auto-delete</h3>
+        <p className="mt-1 text-[13px] leading-relaxed text-zinc-600">{name ? <b>{name}</b> : "This statement"} will be permanently removed from memory in</p>
+        <div className="tnum mt-1.5 text-3xl font-extrabold text-rose-600">{fmtLeft(msLeft)}</div>
+        <p className="mt-1.5 text-[11.5px] text-zinc-400">Zero-storage promise — nothing is kept after the timer ends.</p>
+        <div className="mt-4 flex gap-2">
+          <button onClick={onExtend} className="focusable flex-1 rounded-xl bg-zinc-900 px-4 py-2.5 text-[13px] font-semibold text-white transition-transform hover:bg-zinc-800 active:scale-[0.98]">Keep for {retention} more min</button>
+          <button onClick={onDismiss} className="focusable rounded-xl border border-zinc-200 px-4 py-2.5 text-[13px] font-semibold text-zinc-600 hover:bg-zinc-50">Let it delete</button>
+        </div>
+      </motion.div>
+    </motion.div>
   );
 }
 

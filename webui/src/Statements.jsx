@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { Plus, MagnifyingGlass, ArrowRight, Trash, Key } from "@phosphor-icons/react";
 import { api, fmtDate, initials, avColor } from "./api";
-import { Card, Skeleton, Empty, PrivacyBanner, stagger, rise, spring, haptic, tactile } from "./ui";
+import { Card, Skeleton, Empty, PrivacyBanner, ExpiryChip, ExpiryModal, useNow, leftMs, warnMs, stagger, rise, spring, haptic, tactile } from "./ui";
 
 const statusTone = {
   READY: "bg-emerald-50 text-emerald-700 ring-emerald-200",
@@ -15,15 +15,11 @@ const statusTone = {
 };
 const gradeTone = { A: "bg-emerald-600", B: "bg-lime-600", C: "bg-amber-500", D: "bg-orange-600", E: "bg-rose-600" };
 
-const expiresIn = (r) => {
-  if (!r.expires_at) return null;
-  const m = Math.max(0, Math.round((r.expires_at * 1000 - Date.now()) / 60000));
-  return m >= 60 ? `expires in ${Math.floor(m / 60)}h ${m % 60}m` : `expires in ${m}m`;
-};
-
 export default function Statements({ retention = 60 }) {
   const [rows, setRows] = useState(null);
   const [q, setQ] = useState("");
+  const [dismissed, setDismissed] = useState({});   // `${id}:${expires_at}` -> true
+  const now = useNow(1000);
   const load = () => api.list().then(setRows);
   useEffect(() => { load(); const t = setInterval(load, 60000); return () => clearInterval(t); }, []);
   useEffect(() => {
@@ -34,6 +30,15 @@ export default function Statements({ retention = 60 }) {
 
   const del = async (id) => { if (!confirm("Delete this statement?")) return; await api.del(id); load(); };
   const retry = async (id) => { const pw = prompt("PDF password:"); if (!pw) return; const r = await api.retry(id, pw); if (r.status === "READY") location.hash = "#/statement/" + id; else load(); };
+  const extend = async (id) => {
+    try { const r = await api.extend(id); setRows((rs) => (rs || []).map((x) => (x.id === id ? { ...x, ...r } : x))); } catch { load(); }
+  };
+
+  // first row inside the warning window that hasn't been dismissed for this cycle
+  const warnRow = (rows || []).find((r) => {
+    const left = leftMs(r, now);
+    return left != null && left > 0 && left <= warnMs(retention) && !dismissed[`${r.id}:${r.expires_at}`];
+  });
 
   const filtered = (rows || []).filter((r) => !q || (r.name || r.filename || "").toLowerCase().includes(q.toLowerCase()) || (r.bank || "").toLowerCase().includes(q.toLowerCase()));
 
@@ -73,7 +78,7 @@ export default function Statements({ retention = 60 }) {
                   <span className="truncate font-semibold text-zinc-800">{r.name || r.filename}</span>
                 </div>
                 <span className="text-[13px] text-zinc-600">{r.bank || "—"}</span>
-                <span className="flex flex-col"><span className="tnum text-[12px] text-zinc-500">{r.period || "—"}</span>{expiresIn(r) && <span className="tnum text-[10.5px] text-zinc-400">{expiresIn(r)}</span>}</span>
+                <span className="flex flex-col items-start gap-1"><span className="tnum text-[12px] text-zinc-500">{r.period || "—"}</span><ExpiryChip rec={r} now={now} retention={retention} onExtend={() => extend(r.id)} /></span>
                 <div className="flex flex-col items-start gap-1">
                   <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ring-inset ${statusTone[r.status] || statusTone.PARSING}`}>
                     {["PARSING", "ANALYZING", "QUEUED"].includes(r.status) && <motion.span animate={{ scale: [1, 1.4, 1] }} transition={{ repeat: Infinity, duration: 1.3 }} className="h-1.5 w-1.5 rounded-full bg-current" />}
@@ -92,6 +97,18 @@ export default function Statements({ retention = 60 }) {
           </motion.div>
         </Card>
       )}
+
+      <AnimatePresence>
+        {warnRow && (
+          <ExpiryModal
+            name={warnRow.name || warnRow.filename}
+            msLeft={leftMs(warnRow, now)}
+            retention={retention}
+            onExtend={() => { extend(warnRow.id); setDismissed((d) => ({ ...d, [`${warnRow.id}:${warnRow.expires_at}`]: true })); }}
+            onDismiss={() => setDismissed((d) => ({ ...d, [`${warnRow.id}:${warnRow.expires_at}`]: true }))}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

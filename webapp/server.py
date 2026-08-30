@@ -354,6 +354,18 @@ def download_json(sid: str):
                     headers={"Content-Disposition": 'attachment; filename="result.json"'})
 
 
+@app.post("/api/statements/{sid}/extend")
+def extend_statement(sid: str):
+    """Reset the retention timer: keep this statement for RETENTION_MINUTES more."""
+    _sweep()
+    rec = STATEMENTS.get(sid)
+    if not rec:
+        raise HTTPException(404, "not found")
+    rec["expires_at"] = time.time() + RETENTION_MINUTES * 60
+    log.info("%s == retention extended (+%dm)", sid[:6], RETENTION_MINUTES)
+    return _light(rec)
+
+
 @app.delete("/api/statements/{sid}")
 def delete_statement(sid: str):
     STATEMENTS.pop(sid, None)
