@@ -3,7 +3,7 @@ download only — the CLI/reference output stays untouched):
 Avg Closing Balance (3rd/4th), Spend Analysis, Loan Analysis, Daily Balance."""
 import datetime
 
-from openpyxl import load_workbook
+from openpyxl import Workbook, load_workbook
 from openpyxl.utils import get_column_letter
 
 from bankiq.render import _set, _hdr, NAVY, PEACH, BLUE, PINK, AMT, DATE, MONTH, mdt
@@ -19,8 +19,10 @@ def _month_headers(ws, months, row, start_col):
              Font(name="Arial", size=10, bold=True), PINK, MONTH, "center", border=True)
 
 
-def add_extra_sheets(xlsx_path, meta, rep):
-    wb = load_workbook(xlsx_path)
+def add_extra_sheets(target, meta, rep):
+    """Mutate a live Workbook in place (in-memory flow), or load/save a path."""
+    is_wb = isinstance(target, Workbook)
+    wb = target if is_wb else load_workbook(target)
     months = rep["months"]
 
     # 1. Avg Closing Balance 3rd & 4th
@@ -132,5 +134,7 @@ def add_extra_sheets(xlsx_path, meta, rep):
              Font(name="Arial", size=10, bold=True), fmt=(AMT if isinstance(ov, float) else "General"), border=True)
         r += 1
 
-    wb.save(xlsx_path)
-    return xlsx_path
+    if is_wb:
+        return wb
+    wb.save(target)
+    return target

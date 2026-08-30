@@ -56,8 +56,12 @@ class _Page:
 
 
 class _Doc:
-    def __init__(self, path):
-        self._d = fitz.open(path)
+    def __init__(self, src):
+        # accept either a filesystem path or raw PDF bytes (zero-storage server flow)
+        if isinstance(src, (bytes, bytearray)):
+            self._d = fitz.open(stream=src, filetype="pdf")
+        else:
+            self._d = fitz.open(src)
         self.pages = [_Page(p) for p in self._d]
 
     def __enter__(self):
@@ -68,23 +72,36 @@ class _Doc:
         return False
 
 
-def _open(path):
-    return _Doc(path)
+def _open(src):
+    return _Doc(src)
 
 
-def decrypt_to(src, password, dest):
-    """Write a decrypted copy of src to dest (pass-through when not encrypted)."""
-    reader = PdfReader(src)
-    if reader.is_encrypted:
-        if not password:
-            raise ValueError("PDF is password-protected; pass --password")
-        if reader.decrypt(password) == 0:
-            raise ValueError("wrong PDF password")
+def decrypt_bytes(src_bytes, password=None):
+    """Return (decrypted_pdf_bytes, was_protected). Pure in-memory — nothing
+    touches disk, so no plaintext copy of a statement ever lands in a temp dir."""
+    import io
+    reader = PdfReader(io.BytesIO(src_bytes))
+    if not reader.is_encrypted:
+        return src_bytes, False
+    if not password:
+        raise ValueError("PDF is password-protected; pass --password")
+    if reader.decrypt(password) == 0:
+        raise ValueError("wrong PDF password")
     writer = PdfWriter()
     for page in reader.pages:
         writer.add_page(page)
+    buf = io.BytesIO()
+    writer.write(buf)
+    return buf.getvalue(), True
+
+
+def decrypt_to(src, password, dest):
+    """Write a decrypted copy of src to dest (pass-through when not encrypted).
+    Kept for compatibility; the app itself uses decrypt_bytes."""
+    with open(src, "rb") as fh:
+        data, _ = decrypt_bytes(fh.read(), password)
     with open(dest, "wb") as fh:
-        writer.write(fh)
+        fh.write(data)
     return dest
 
 
@@ -997,12 +1014,21 @@ def parse_generic(pdf):
 
 
 # --------------------------------------------------------------- dispatcher
-def parse_statement(pdf_path, password=None, workdir=None):
+def parse_statement(pdf, password=None, workdir=None):
+    """Parse a statement from a filesystem path OR raw PDF bytes.
+
+    Fully in-memory: decryption and text extraction never write to disk, so no
+    plaintext copy of a statement is ever left in a temp directory. The
+    `workdir` kwarg is accepted for backwards compatibility and ignored."""
     import os
-    import tempfile
-    workdir = workdir or tempfile.mkdtemp(prefix="bankiq_")
-    dec = os.path.join(workdir, "decrypted.pdf")
-    decrypt_to(pdf_path, password, dec)
+    if isinstance(pdf, (bytes, bytearray)):
+        data = bytes(pdf)
+        src_name = None
+    else:
+        with open(pdf, "rb") as fh:
+            data = fh.read()
+        src_name = os.path.basename(pdf)
+    dec, protected = decrypt_bytes(data, password)
     with _open(dec) as doc:
         first = doc.pages[0].extract_text() or ""
         # scanned / image-only PDF: no usable text layer anywhere -> exclude cleanly
@@ -1016,7 +1042,6 @@ def parse_statement(pdf_path, password=None, workdir=None):
         if sampled <= 60:
             raise ValueError("Image PDF: this looks like a scanned or image-only statement "
                              "(no selectable text). BankIQ needs a text (native) PDF — skipped.")
-    protected = PdfReader(pdf_path).is_encrypted
     up = first.upper()
     # detect by the account's OWN distinctive markers — never by a counterparty
     # IFSC/VPA that can appear inside any bank's narration
@@ -1054,7 +1079,8 @@ def parse_statement(pdf_path, password=None, workdir=None):
                          "no recognisable transaction table (scanned/image PDF, or "
                          "an unsupported layout)")
     meta["password_protected"] = "Yes" if protected else "No"
-    meta["source_file"] = pdf_path
+    # basename only (or None for in-memory uploads) — never an absolute path
+    meta["source_file"] = src_name
     verify_balances(meta["transactions"])
     return meta
 

@@ -2,6 +2,7 @@
 const J = (r) => r.json();
 
 export const api = {
+  meta: () => fetch("/api/meta").then(J).catch(() => ({ retention_minutes: 60, storage: "memory" })),
   list: () => fetch("/api/statements").then(J),
   get: (id) => fetch("/api/statements/" + id).then(async (r) => ({ ok: r.ok, status: r.status, body: await r.json() })),
   upload: (fd) => fetch("/api/upload", { method: "POST", body: fd }).then(async (r) => {

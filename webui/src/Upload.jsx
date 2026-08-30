@@ -1,8 +1,8 @@
 import { useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { UploadSimple, FilePdf, X, CircleNotch, ShieldCheck, CheckCircle, ArrowRight } from "@phosphor-icons/react";
+import { UploadSimple, FilePdf, X, CircleNotch, CheckCircle, ArrowRight } from "@phosphor-icons/react";
 import { api } from "./api";
-import { stagger, rise, spring, haptic } from "./ui";
+import { stagger, rise, spring, haptic, PrivacyBanner } from "./ui";
 
 const BANKS = ["Union Bank", "City Union", "SBI", "HDFC", "+ generic"];
 
@@ -19,7 +19,7 @@ function Field({ label, hint, children }) {
 }
 const inputCls = "focusable w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-[13.5px] outline-none transition-shadow placeholder:text-zinc-400 focus:border-accent focus:ring-2 focus:ring-accent-ring/50";
 
-export default function Upload() {
+export default function Upload({ retention = 60 }) {
   const [file, setFile] = useState(null);
   const [drag, setDrag] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -101,10 +101,7 @@ export default function Upload() {
             </div>
           </div>
 
-          <div className="mt-3 flex items-center gap-2 px-1 text-[12px] text-zinc-500">
-            <ShieldCheck size={15} weight="fill" className="text-accent-fg" />
-            Parsed on your server — the PDF is never sent to a third party.
-          </div>
+          <PrivacyBanner minutes={retention} className="mt-3" />
         </motion.section>
 
         {/* ---- right: details ---- */}

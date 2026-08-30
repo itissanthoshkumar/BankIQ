@@ -105,6 +105,28 @@ python3 validate.py
 Regenerates the three sample outputs and diffs every sheet against the
 reference workbooks in `~/Downloads`.
 
+## Security & privacy
+
+BankIQ is **zero-storage by design** — it handles real bank statements, so
+nothing is ever written to disk:
+
+- The uploaded PDF is read into memory, decrypted in memory, parsed in memory;
+  results (the analysis payload and the Excel workbook) live only in the
+  server process's RAM.
+- Every result **auto-deletes after `RETENTION_MINUTES`** (default 60) and is
+  wiped instantly by any restart or redeploy. The trash button deletes on the
+  spot. Password-locked PDFs are held in RAM only while a password retry is
+  pending, then dropped.
+- **Server logs contain no personal data** — only short random ids, sizes,
+  timings and statuses. No filenames, holder names, or transaction text.
+- All `/api/*` responses carry `Cache-Control: no-store`; the app also sets
+  `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy:
+  no-referrer` and a CSP on the page.
+- Downloads (XLSX/JSON) are deliberate user actions — the downloaded file is
+  the only copy that persists, on the user's own machine.
+- The app must run with **one worker** (`--workers 1`): all state is in-process
+  memory.
+
 ## Deploy on Render
 
 The React SPA is pre-built and committed (`webapp/spa/`), so Render only needs
@@ -119,9 +141,9 @@ repo → **Apply**.
 | --- | --- |
 | Language | Python 3 |
 | Build command | `pip install -r requirements.txt` |
-| Start command | `python -m uvicorn webapp.server:app --host 0.0.0.0 --port $PORT` |
+| Start command | `python -m uvicorn webapp.server:app --host 0.0.0.0 --port $PORT --workers 1` |
 | Plan | Free |
 
-Notes: the Free plan filesystem is **ephemeral** — uploaded statements in
-`webapp/data/` are cleared on each deploy/restart (attach a Disk on a paid
-instance to persist them). Python is pinned to 3.12 via `.python-version`.
+Notes: the app is zero-storage (see **Security & privacy**) — do **not** attach
+a Disk; `--workers 1` is required. Python is pinned to 3.12 via
+`.python-version`. `RETENTION_MINUTES` (env) tunes the auto-delete window.

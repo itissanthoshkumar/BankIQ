@@ -13,7 +13,6 @@ and Party Xns (conditional tabs appear only when relevant data exists).
 import argparse
 import os
 import sys
-import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -30,7 +29,7 @@ def main():
     ap.add_argument("-o", "--out", default=None)
     args = ap.parse_args()
 
-    meta = parse_statement(args.pdf, args.password, tempfile.mkdtemp(prefix="bankiq_"))
+    meta = parse_statement(args.pdf, args.password)
     categorize_all(meta)
     rep = build_report(meta)
 

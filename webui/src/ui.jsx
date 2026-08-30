@@ -1,6 +1,6 @@
 import { motion, useMotionValue, useTransform, animate, useReducedMotion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
-import { Question } from "@phosphor-icons/react";
+import { Question, ShieldCheck } from "@phosphor-icons/react";
 import { num } from "./api";
 
 export const spring = { type: "spring", stiffness: 120, damping: 20 };
@@ -86,6 +86,16 @@ export function Help({ title, what, how, ex, className = "" }) {
         </div>
       )}
     </span>
+  );
+}
+
+// zero-storage promise, stated where the data is
+export function PrivacyBanner({ minutes = 60, className = "" }) {
+  return (
+    <div className={`flex items-center gap-2.5 rounded-xl bg-accent-soft px-4 py-2.5 text-[12.5px] font-medium text-accent-fg ring-1 ring-inset ring-accent-ring/50 ${className}`}>
+      <ShieldCheck size={17} weight="fill" className="shrink-0" />
+      <span>Nothing is stored — statements are processed in memory only, auto-deleted after {minutes} min, and gone the moment the server restarts.</span>
+    </div>
   );
 }
 

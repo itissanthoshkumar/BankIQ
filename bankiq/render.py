@@ -506,7 +506,9 @@ def sheet_party_xns(wb, rep):
 
 
 # ------------------------------------------------------------------ main
-def render(rep, out_path):
+def render(rep, out_path=None):
+    """Build the workbook. With out_path, save to disk (CLI flow); with
+    out_path=None, return the live Workbook for the caller to save in memory."""
     wb = Workbook()
     wb.remove(wb.active)
     sheet_analysis(wb, rep)
@@ -536,5 +538,7 @@ def render(rep, out_path):
     sheet_fcu_irregular(wb, rep)
     sheet_roundtrip(wb, rep)
     sheet_party_xns(wb, rep)
+    if out_path is None:
+        return wb
     wb.save(out_path)
     return out_path

@@ -2,21 +2,26 @@
 BankIQ engine, view results (summary / insights / analysis / transactions /
 flags) and download the XLSX/JSON. FSD §6.13 (M12 core, Phase P1).
 
+ZERO-STORAGE BY DESIGN: nothing is ever written to disk. Statements are
+processed entirely in memory; results (payload + workbook bytes) live only in
+the in-process STATEMENTS dict, auto-expire after RETENTION_MINUTES, and
+vanish on restart. Requires a single worker (--workers 1).
+
 Run:  uvicorn webapp.server:app --reload --port 8760   (from the banking-iq dir)
 """
 import datetime
+import io
 import json
 import logging
 import os
-import shutil
 import sys
-import tempfile
 import threading
+import time
 import traceback
 import uuid
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -32,50 +37,61 @@ from webapp.extra_sheets import add_extra_sheets    # noqa: E402
 HERE = os.path.dirname(os.path.abspath(__file__))
 STATIC = os.path.join(HERE, "static")
 SPA = os.path.join(HERE, "spa")            # built React app (vite build output)
-DATA = os.path.join(HERE, "data")
-os.makedirs(DATA, exist_ok=True)
 
-app = FastAPI(title="BankIQ", version="1.0")
+# ── zero-storage configuration ───────────────────────────────────────────────
+RETENTION_MINUTES = int(os.environ.get("RETENTION_MINUTES", "60"))
+MAX_STATEMENTS = int(os.environ.get("MAX_STATEMENTS", "25"))
+MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "30"))
+PDF_HOLD_MAX = 5          # max records allowed to pin raw PDF bytes (NEEDS_PASSWORD)
+STALE_PARSING_S = 1200    # PARSING with no result for 20 min → the worker died
+DEBUG = bool(os.environ.get("DEBUG"))
+
+TERMINAL = ("READY", "FAILED", "UNSUPPORTED", "IMAGE_SKIPPED", "EXTRACTION_SUSPECT")
+PENDING = ("PARSING", "ANALYZING", "QUEUED")
+XLSX_MT = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+app = FastAPI(title="BankIQ", version="2.0")
 
 
 @app.middleware("http")
-async def _no_cache_assets(request, call_next):
-    # internal tool — always serve fresh HTML/CSS/JS so edits show without a hard refresh
+async def _security(request, call_next):
     resp = await call_next(request)
-    if request.url.path == "/" or request.url.path.startswith(("/static", "/assets", "/logo")):
+    path = request.url.path
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    resp.headers["X-Frame-Options"] = "DENY"
+    resp.headers["Referrer-Policy"] = "no-referrer"
+    if path.startswith("/api"):
+        # statement data must never land in a browser or proxy cache
+        resp.headers["Cache-Control"] = "no-store"
+    elif path == "/" or path.startswith(("/static", "/assets", "/logo")):
         resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        if path == "/":
+            resp.headers["Content-Security-Policy"] = (
+                "default-src 'self'; script-src 'self'; "
+                "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+                "font-src https://fonts.gstatic.com; img-src 'self' data:; "
+                "connect-src 'self'; object-src 'none'; frame-ancestors 'none'; "
+                "base-uri 'self'; form-action 'self'")
     return resp
 
-# in-memory index; each record also persisted under DATA/<id>/
+
+# In-memory store — the ONLY place statement data lives. Light keys are safe to
+# serialise (list rows / _record); heavy keys hold the actual data:
+#   payload (dict)  — the full analysis, served as result.json and to the viewer
+#   xlsx (bytes)    — the rendered workbook
+#   pdf (bytes)     — the raw upload, kept ONLY while status is NEEDS_PASSWORD
 STATEMENTS = {}
+_LIGHT_KEYS = ("id", "filename", "uploaded_at", "status", "name",
+               "bank", "period", "grade", "reason", "expires_at")
 
 
-def _index_path():
-    return os.path.join(DATA, "index.json")
-
-
-def _load_index():
-    if os.path.exists(_index_path()):
-        try:
-            with open(_index_path()) as fh:
-                for rec in json.load(fh):
-                    STATEMENTS[rec["id"]] = rec
-        except Exception:
-            pass
-
-
-def _save_index():
-    recs = sorted(STATEMENTS.values(), key=lambda r: r["uploaded_at"], reverse=True)
-    tmp = _index_path() + ".tmp"
-    with open(tmp, "w") as fh:
-        json.dump(recs, fh, indent=2)
-    os.replace(tmp, _index_path())   # atomic — no partial reads during a poll
-
-
-_load_index()
+def _light(rec):
+    return {k: rec.get(k) for k in _LIGHT_KEYS}
 
 
 # ── logging → stdout (visible in the hosting platform's log stream) ──────────
+# Deliberately PII-free: statement ids, sizes, timings and counts only — never
+# the holder's name, the upload filename, or raw exception/narration text.
 log = logging.getLogger("bankiq")
 if not log.handlers:
     _h = logging.StreamHandler(sys.stdout)
@@ -103,52 +119,30 @@ def _mem_mb():
         return -1.0
 
 
-def _reconcile():
-    """Make status disk-authoritative so a worker restart / second worker can't strand
-    a record: adopt persisted records, flip finished jobs (result.json present) to READY,
-    and fail jobs stuck too long (a crashed/OOM worker leaves no result)."""
-    try:
-        if os.path.exists(_index_path()):
-            with open(_index_path()) as fh:
-                for rec in json.load(fh):
-                    cur = STATEMENTS.get(rec["id"])
-                    if cur is None or cur.get("status") in (None, "PARSING", "ANALYZING", "QUEUED"):
-                        STATEMENTS[rec["id"]] = rec
-    except Exception:
-        pass
+def _sweep():
+    """Enforce the retention promise: drop expired records, and fail PARSING
+    records whose worker evidently died (no result after STALE_PARSING_S)."""
+    now = time.time()
     for sid, rec in list(STATEMENTS.items()):
-        if rec.get("status") == "READY":
+        if rec.get("expires_at") and now > rec["expires_at"]:
+            STATEMENTS.pop(sid, None)
+            log.info("%s == expired (retention %dm) — purged from memory", sid[:6], RETENTION_MINUTES)
             continue
-        rp = os.path.join(DATA, sid, "result.json")
-        if os.path.exists(rp):
-            # a finished result is the ultimate truth — recover even a stale-failed record
-            try:
-                with open(rp) as fh:
-                    payload = json.load(fh)
-                s = payload.get("summary", {}) or {}
-                g = payload.get("grade", {}) or {}
-                rec.update(status="READY", name=s.get("name"), bank=s.get("bank"),
-                           period=(f"{s.get('period_start')} → {s.get('period_end')}"
-                                   if s.get("period_start") else None),
-                           grade=g.get("grade"), reason=None)
-            except Exception:
-                pass
-        elif rec.get("status") in ("PARSING", "ANALYZING", "QUEUED"):
+        if rec.get("status") in PENDING:
             try:
                 age = (datetime.datetime.now()
                        - datetime.datetime.fromisoformat(rec["uploaded_at"])).total_seconds()
             except Exception:
                 age = 0.0
-            if age > 1200:  # 20 min with no result → the worker restarted or was killed mid-parse
+            if age > STALE_PARSING_S:
+                rec.pop("pdf", None)
                 rec.update(status="FAILED", reason="Processing did not complete — the worker may "
                            "have restarted or run out of memory. Try re-uploading.")
 
 
-def _process(pdf_path, password, extras, tag=""):
-    """Run the full pipeline; return (payload, xlsx_path) or raise. Logs every stage
-    with elapsed time + resident memory so progress/OOM is visible in the log stream."""
-    import time
-    workdir = tempfile.mkdtemp(prefix="bankiq_")
+def _process(pdf_bytes, password, extras, tag=""):
+    """Run the full pipeline in memory; return (payload, xlsx_bytes) or raise.
+    Logs every stage with elapsed time + resident memory."""
 
     def start(msg):
         log.info("%s   -> %s ...", tag, msg)
@@ -158,10 +152,10 @@ def _process(pdf_path, password, extras, tag=""):
 
     start("parse PDF")
     t = time.time()
-    meta = parse_statement(pdf_path, password, workdir)
+    meta = parse_statement(pdf_bytes, password)
     n = len(meta.get("transactions") or [])
-    log.info("%s   ok parsed: %s / %s / %d txns (%.1fs, rss %.0fMB)", tag,
-             meta.get("bank"), meta.get("name"), n, time.time() - t, _mem_mb())
+    log.info("%s   ok parsed: %s / %d txns (%.1fs, rss %.0fMB)", tag,
+             meta.get("bank"), n, time.time() - t, _mem_mb())
 
     start("categorise transactions")
     t = time.time(); categorize_all(meta); done("categorised", t)
@@ -173,14 +167,15 @@ def _process(pdf_path, password, extras, tag=""):
     t = time.time(); payload = build_payload(meta, rep); payload["extras"] = extras
     done("payload built", t)
 
-    xlsx = os.path.join(workdir, "report.xlsx")
-    start("render Perfios workbook")
-    t = time.time(); render(rep, xlsx); done("workbook rendered", t)
+    start("render workbook (in memory)")
+    t = time.time()
+    wb = render(rep)                 # returns the live Workbook — nothing on disk
+    add_extra_sheets(wb, meta, rep)  # mutates in place
+    buf = io.BytesIO()
+    wb.save(buf)
+    done("workbook rendered", t)
 
-    start("add extra sheets")
-    t = time.time(); add_extra_sheets(xlsx, meta, rep); done("extra sheets added", t)
-
-    return payload, xlsx
+    return payload, buf.getvalue()
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -202,14 +197,16 @@ def logo():
     raise HTTPException(404, "no logo")
 
 
+@app.get("/api/meta")
+def meta():
+    return {"retention_minutes": RETENTION_MINUTES, "storage": "memory"}
+
+
 @app.get("/api/statements")
 def list_statements():
-    _reconcile()
-    return sorted(
-        [{k: r[k] for k in ("id", "filename", "uploaded_at", "status", "name",
-                            "bank", "period", "grade", "reason")}
-         for r in STATEMENTS.values()],
-        key=lambda r: r["uploaded_at"], reverse=True)
+    _sweep()
+    return sorted([_light(r) for r in STATEMENTS.values()],
+                  key=lambda r: r["uploaded_at"], reverse=True)
 
 
 @app.post("/api/upload")
@@ -223,18 +220,26 @@ async def upload(
 ):
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(400, "Only PDF files are accepted.")
+    data = await file.read()
+    if len(data) > MAX_UPLOAD_MB * 1048576:
+        raise HTTPException(413, f"PDF larger than {MAX_UPLOAD_MB} MB.")
+    _sweep()
+    if len(STATEMENTS) >= MAX_STATEMENTS:
+        # evict the oldest finished record; never evict work in flight
+        finished = sorted((r for r in STATEMENTS.values() if r.get("status") in TERMINAL),
+                          key=lambda r: r["uploaded_at"])
+        if finished:
+            STATEMENTS.pop(finished[0]["id"], None)
+        else:
+            raise HTTPException(429, "At capacity — delete a statement or retry shortly.")
     sid = uuid.uuid4().hex[:12]
-    sdir = os.path.join(DATA, sid)
-    os.makedirs(sdir, exist_ok=True)
-    pdf_path = os.path.join(sdir, "source.pdf")
-    with open(pdf_path, "wb") as fh:
-        shutil.copyfileobj(file.file, fh)
-    log.info("%s == UPLOAD '%s' (%.1fMB) pw=%s", sid[:6], file.filename,
-             os.path.getsize(pdf_path) / 1048576, "yes" if password else "no")
+    log.info("%s == UPLOAD %.1fMB pw=%s", sid[:6], len(data) / 1048576,
+             "yes" if password else "no")
 
     rec = {
         "id": sid, "filename": file.filename,
         "uploaded_at": datetime.datetime.now().isoformat(timespec="seconds"),
+        "expires_at": time.time() + RETENTION_MINUTES * 60,
         "status": "PARSING", "name": None, "bank": None, "period": None,
         "grade": None, "reason": None,
     }
@@ -242,41 +247,45 @@ async def upload(
 
     extras = {"applicant_name": applicant_name or None, "reference_id": reference_id or None,
               "proposed_emi": proposed_emi or None, "product": product or None}
-    _save_index()  # persist the PARSING record before the (possibly slow) processing
-    # Process in a background thread and return immediately. Large statements
-    # (100+ pages / 1000+ txns) take 30-60s to parse + render the workbook, which
-    # would otherwise exceed the proxy's request timeout on hosted deployments.
-    # The frontend polls the statement list until this flips PARSING -> READY.
-    threading.Thread(target=_run_processing, args=(sid, password or None, extras),
+    # Process in a background thread and return immediately (large statements
+    # would exceed the hosting proxy's request timeout). The frontend polls the
+    # list until PARSING flips to a terminal status.
+    threading.Thread(target=_run_processing, args=(sid, data, password or None, extras),
                      daemon=True).start()
-    return rec
+    return _light(rec)
 
 
-def _run_processing(sid, password, extras):
-    """Parse -> categorise -> analyse -> render, off the request thread; updates the record."""
-    import time
+def _finish_ok(rec, payload, xlsx_bytes):
+    s = payload["summary"]
+    rec.pop("pdf", None)
+    rec.update(status="READY", name=s["name"], bank=s["bank"],
+               period=f"{s['period_start']} → {s['period_end']}",
+               grade=payload["grade"]["grade"], reason=None,
+               payload=payload, xlsx=xlsx_bytes)
+
+
+def _run_processing(sid, data, password, extras):
+    """Parse -> categorise -> analyse -> render, off the request thread; RAM only."""
     tag = sid[:6]
     rec = STATEMENTS.get(sid)
     if not rec:
         return
-    sdir = os.path.join(DATA, sid)
-    pdf_path = os.path.join(sdir, "source.pdf")
     t0 = time.time()
-    log.info("%s == processing '%s' started (rss %.0fMB)", tag, rec.get("filename"), _mem_mb())
+    log.info("%s == processing started (rss %.0fMB)", tag, _mem_mb())
     try:
-        payload, xlsx = _process(pdf_path, password or None, extras, tag=tag)
-        with open(os.path.join(sdir, "result.json"), "w") as fh:
-            json.dump(payload, fh)
-        shutil.copy(xlsx, os.path.join(sdir, "report.xlsx"))
-        s = payload["summary"]
-        rec.update(status="READY", name=s["name"], bank=s["bank"],
-                   period=f"{s['period_start']} → {s['period_end']}",
-                   grade=payload["grade"]["grade"], reason=None)
-        log.info("%s == DONE -> READY '%s' in %.1fs (rss %.0fMB)", tag, s["name"],
-                 time.time() - t0, _mem_mb())
+        payload, xlsx_bytes = _process(data, password, extras, tag=tag)
+        _finish_ok(rec, payload, xlsx_bytes)
+        log.info("%s == DONE -> READY in %.1fs (rss %.0fMB)", tag, time.time() - t0, _mem_mb())
     except ValueError as e:
         msg = str(e)
         if "password" in msg.lower():
+            # keep the raw bytes ONLY for the password retry; bounded pin
+            holders = [r for r in STATEMENTS.values() if r.get("pdf") is not None]
+            if len(holders) >= PDF_HOLD_MAX:
+                oldest = min(holders, key=lambda r: r["uploaded_at"])
+                oldest.pop("pdf", None)
+                oldest.update(status="FAILED", reason="Expired while awaiting a password — please re-upload.")
+            rec["pdf"] = data
             rec.update(status="NEEDS_PASSWORD", reason=msg)
         elif msg.startswith("Image PDF"):
             rec.update(status="IMAGE_SKIPPED", reason=msg)
@@ -286,76 +295,68 @@ def _run_processing(sid, password, extras):
             rec.update(status="EXTRACTION_SUSPECT", reason=msg)
         else:
             rec.update(status="FAILED", reason=msg)
-        log.info("%s == %s in %.1fs: %s", tag, rec["status"], time.time() - t0, msg)
+        log.info("%s == %s in %.1fs", tag, rec["status"], time.time() - t0)
     except Exception as e:
-        rec.update(status="FAILED", reason=f"{type(e).__name__}: {e}")
-        log.error("%s == FAILED in %.1fs: %s: %s", tag, time.time() - t0, type(e).__name__, e)
-        traceback.print_exc()
-    _save_index()
+        # log the exception TYPE only — raw text can embed statement narration
+        rec.update(status="FAILED", reason=f"{type(e).__name__} while processing — try re-uploading.")
+        log.error("%s == FAILED in %.1fs: %s", tag, time.time() - t0, type(e).__name__)
+        if DEBUG:
+            traceback.print_exc()
 
 
 @app.post("/api/statements/{sid}/password")
 def retry_password(sid: str, password: str = Form(...)):
+    _sweep()
     rec = STATEMENTS.get(sid)
     if not rec:
         raise HTTPException(404, "not found")
-    sdir = os.path.join(DATA, sid)
-    pdf_path = os.path.join(sdir, "source.pdf")
+    data = rec.get("pdf")
+    if data is None:
+        raise HTTPException(410, "The original PDF is no longer in memory (expired or the "
+                                 "server restarted) — please re-upload it.")
     try:
-        payload, xlsx = _process(pdf_path, password, {}, tag=sid[:6])
-        with open(os.path.join(sdir, "result.json"), "w") as fh:
-            json.dump(payload, fh)
-        shutil.copy(xlsx, os.path.join(sdir, "report.xlsx"))
-        s = payload["summary"]
-        rec.update(status="READY", name=s["name"], bank=s["bank"],
-                   period=f"{s['period_start']} → {s['period_end']}",
-                   grade=payload["grade"]["grade"], reason=None)
+        payload, xlsx_bytes = _process(data, password, {}, tag=sid[:6])
+        _finish_ok(rec, payload, xlsx_bytes)
     except ValueError as e:
         rec.update(status="NEEDS_PASSWORD", reason=str(e))
-    _save_index()
-    return rec
+    return _light(rec)
 
 
 @app.get("/api/statements/{sid}")
 def get_statement(sid: str):
-    _reconcile()
-    sdir = os.path.join(DATA, sid)
-    p = os.path.join(sdir, "result.json")
-    if not os.path.exists(p):
-        rec = STATEMENTS.get(sid)
-        if rec:
-            return JSONResponse({"status": rec["status"], "reason": rec.get("reason")}, status_code=409)
+    _sweep()
+    rec = STATEMENTS.get(sid)
+    if not rec:
         raise HTTPException(404, "not found")
-    with open(p) as fh:
-        payload = json.load(fh)
-    payload["_record"] = STATEMENTS.get(sid)
-    return payload
+    if rec.get("payload") is None:
+        return JSONResponse({"status": rec["status"], "reason": rec.get("reason")}, status_code=409)
+    return dict(rec["payload"], _record=_light(rec))
 
 
 @app.get("/api/statements/{sid}/report.xlsx")
 def download_xlsx(sid: str):
-    p = os.path.join(DATA, sid, "report.xlsx")
-    if not os.path.exists(p):
+    _sweep()
+    rec = STATEMENTS.get(sid)
+    if not rec or rec.get("xlsx") is None:
         raise HTTPException(404, "not ready")
-    rec = STATEMENTS.get(sid, {})
     name = (rec.get("name") or "report").replace(" ", "_")
-    return FileResponse(p, filename=f"{name}_BSA.xlsx",
-                        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    return Response(rec["xlsx"], media_type=XLSX_MT,
+                    headers={"Content-Disposition": f'attachment; filename="{name}_BSA.xlsx"'})
 
 
 @app.get("/api/statements/{sid}/result.json")
 def download_json(sid: str):
-    p = os.path.join(DATA, sid, "result.json")
-    if not os.path.exists(p):
+    _sweep()
+    rec = STATEMENTS.get(sid)
+    if not rec or rec.get("payload") is None:
         raise HTTPException(404, "not ready")
-    return FileResponse(p, filename="result.json", media_type="application/json")
+    return Response(json.dumps(rec["payload"]), media_type="application/json",
+                    headers={"Content-Disposition": 'attachment; filename="result.json"'})
 
 
 @app.delete("/api/statements/{sid}")
 def delete_statement(sid: str):
     STATEMENTS.pop(sid, None)
-    shutil.rmtree(os.path.join(DATA, sid), ignore_errors=True)
-    _save_index()
     return {"deleted": sid}
 
 
@@ -363,5 +364,6 @@ app.mount("/static", StaticFiles(directory=STATIC), name="static")
 if os.path.isdir(os.path.join(SPA, "assets")):
     app.mount("/assets", StaticFiles(directory=os.path.join(SPA, "assets")), name="spa-assets")
 
-log.info("BankIQ server ready — SPA=%s, %d statement(s) on disk, rss %.0fMB",
-         os.path.exists(os.path.join(SPA, "index.html")), len(STATEMENTS), _mem_mb())
+log.info("BankIQ server ready — zero-storage (RAM only, retention %dm, cap %d), SPA=%s, rss %.0fMB",
+         RETENTION_MINUTES, MAX_STATEMENTS,
+         os.path.exists(os.path.join(SPA, "index.html")), _mem_mb())

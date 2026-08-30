@@ -9,9 +9,14 @@ services:
     region: singapore          # closest to India; change if you prefer another region
     branch: main
     buildCommand: pip install -r requirements.txt
-    # bind 0.0.0.0:$PORT so Render can route to it (never 127.0.0.1 or a fixed port)
-    startCommand: python -m uvicorn webapp.server:app --host 0.0.0.0 --port $PORT
+    # bind 0.0.0.0:$PORT so Render can route to it (never 127.0.0.1 or a fixed port).
+    # --workers 1 is REQUIRED: the app is zero-storage — all statement state lives
+    # in one process's memory, so a second worker would see a different (empty) list.
+    startCommand: python -m uvicorn webapp.server:app --host 0.0.0.0 --port $PORT --workers 1
     healthCheckPath: /
-    # NOTE: the Free plan has an ephemeral filesystem — uploaded statements in
-    # webapp/data/ are wiped on every deploy/restart. For persistence, upgrade the
-    # instance and attach a Disk mounted at webapp/data.
+    envVars:
+      - key: RETENTION_MINUTES   # how long results stay in memory before auto-delete
+        value: "60"
+    # ZERO-STORAGE BY DESIGN: nothing is ever written to disk. Uploads are
+    # processed entirely in memory, auto-deleted after RETENTION_MINUTES, and
+    # wiped by any restart/redeploy. No Disk should be attached to this service.

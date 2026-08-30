@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Plus, MagnifyingGlass, ArrowRight, Trash, Key } from "@phosphor-icons/react";
 import { api, fmtDate, initials, avColor } from "./api";
-import { Card, Skeleton, Empty, stagger, rise, spring, haptic, tactile } from "./ui";
+import { Card, Skeleton, Empty, PrivacyBanner, stagger, rise, spring, haptic, tactile } from "./ui";
 
 const statusTone = {
   READY: "bg-emerald-50 text-emerald-700 ring-emerald-200",
@@ -15,11 +15,17 @@ const statusTone = {
 };
 const gradeTone = { A: "bg-emerald-600", B: "bg-lime-600", C: "bg-amber-500", D: "bg-orange-600", E: "bg-rose-600" };
 
-export default function Statements() {
+const expiresIn = (r) => {
+  if (!r.expires_at) return null;
+  const m = Math.max(0, Math.round((r.expires_at * 1000 - Date.now()) / 60000));
+  return m >= 60 ? `expires in ${Math.floor(m / 60)}h ${m % 60}m` : `expires in ${m}m`;
+};
+
+export default function Statements({ retention = 60 }) {
   const [rows, setRows] = useState(null);
   const [q, setQ] = useState("");
   const load = () => api.list().then(setRows);
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); const t = setInterval(load, 60000); return () => clearInterval(t); }, []);
   useEffect(() => {
     if (rows && rows.some((r) => ["PARSING", "ANALYZING", "QUEUED"].includes(r.status))) {
       const t = setTimeout(load, 2500); return () => clearTimeout(t);
@@ -43,6 +49,8 @@ export default function Statements() {
         </motion.a>
       </div>
 
+      <PrivacyBanner minutes={retention} className="mb-4" />
+
       <div className="mb-4 flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2 shadow-soft focus-within:ring-2 focus-within:ring-accent-ring/60 sm:max-w-xs">
         <MagnifyingGlass size={16} className="text-zinc-400" />
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name or bank" className="w-full bg-transparent text-sm outline-none placeholder:text-zinc-400" />
@@ -65,7 +73,7 @@ export default function Statements() {
                   <span className="truncate font-semibold text-zinc-800">{r.name || r.filename}</span>
                 </div>
                 <span className="text-[13px] text-zinc-600">{r.bank || "—"}</span>
-                <span className="tnum text-[12px] text-zinc-500">{r.period || "—"}</span>
+                <span className="flex flex-col"><span className="tnum text-[12px] text-zinc-500">{r.period || "—"}</span>{expiresIn(r) && <span className="tnum text-[10.5px] text-zinc-400">{expiresIn(r)}</span>}</span>
                 <div className="flex flex-col items-start gap-1">
                   <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ring-inset ${statusTone[r.status] || statusTone.PARSING}`}>
                     {["PARSING", "ANALYZING", "QUEUED"].includes(r.status) && <motion.span animate={{ scale: [1, 1.4, 1] }} transition={{ repeat: Infinity, duration: 1.3 }} className="h-1.5 w-1.5 rounded-full bg-current" />}
