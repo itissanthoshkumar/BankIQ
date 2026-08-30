@@ -19,7 +19,7 @@
           "src/tabs.jsx"
         ],
         "createdAt": "2026-08-28T10:34:35.604Z",
-        "reason": "Claude: false positives — muted/dark gray labels & body text sit on white or very-light neutral cards (zinc-50/white) with adequate contrast (zinc-700 on zinc-50 ~10:1; labels bumped to zinc-500 ~4.6:1 AA). Heuristic mis-pairs them with adjacent tinted bars/pills/dark hero card. No gray text on a saturated colored bg exists."
+        "reason": "Previously triaged this session: zinc-400/500 labels sit on the dark navy grade card (designed dark surface) or on white with hover recolor pairs; re-fired only due to line shifts."
       }
     ]
   }

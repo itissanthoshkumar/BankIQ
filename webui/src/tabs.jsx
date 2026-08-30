@@ -192,6 +192,7 @@ function Transactions({ P }) {
           { h: "Balance", num: true, cell: (t) => num(t.balance, 2) },
           { h: "Category", cell: (t) => <Pill>{t.category}</Pill> },
           { h: "Rail", cell: (t) => <Pill tone="accent">{t.rail}</Pill> },
+          { h: "Remitter / Beneficiary", cell: (t) => <span className="text-zinc-500">{t.remitter || ""}</span> },
         ]}
         rows={rows}
         empty={<Empty title="No matching transactions" hint="Clear the search or filters." />}
