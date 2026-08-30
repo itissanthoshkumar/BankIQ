@@ -3,12 +3,14 @@ import Header from "./Header";
 import Statements from "./Statements";
 import Upload from "./Upload";
 import Viewer from "./Viewer";
+import Guide from "./Guide";
 
 function parseHash() {
   const h = (location.hash || "#/").replace(/^#/, "");
   const parts = h.split("/").filter(Boolean); // ['statement','id','tab']
   if (parts[0] === "statement") return { view: "viewer", id: parts[1], tab: parts[2] || "summary" };
   if (parts[0] === "upload") return { view: "upload" };
+  if (parts[0] === "guide") return { view: "guide" };
   return { view: "home" };
 }
 
@@ -26,6 +28,7 @@ export default function App() {
       <main className="mx-auto max-w-[1400px] px-6 py-8">
         {r.view === "home" && <Statements />}
         {r.view === "upload" && <Upload />}
+        {r.view === "guide" && <Guide />}
         {r.view === "viewer" && <Viewer id={r.id} tab={r.tab} />}
       </main>
     </div>

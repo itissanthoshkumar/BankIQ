@@ -35,6 +35,7 @@ export default function Header({ route }) {
         <nav className="flex items-center gap-1">
           <NavLink href="#/" active={on("home")}>Statements</NavLink>
           <NavLink href="#/upload" active={on("upload")}>Upload</NavLink>
+          <NavLink href="#/guide" active={on("guide")}>Guide</NavLink>
         </nav>
       </div>
     </header>
