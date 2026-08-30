@@ -14,6 +14,15 @@
         "value": "dm sans",
         "createdAt": "2026-08-28T06:03:38.117Z",
         "reason": "Prayaan house design system (cred-language-theme): DM Sans is the mandated brand body face, paired with Fraunces"
+      },
+      {
+        "rule": "gray-on-color",
+        "value": "*",
+        "files": [
+          "webui/src/tabs.jsx"
+        ],
+        "createdAt": "2026-08-30T10:28:05.619Z",
+        "reason": "Reviewed: narrative bullets are zinc-700 on zinc-50 (near-white, high contrast) and lifestyle amounts are zinc-500 on a white card — colored elements are separate spans. The one real case (QC warn cards) was fixed with amber-700/80 labels."
       }
     ]
   }
