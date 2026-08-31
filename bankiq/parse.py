@@ -106,7 +106,7 @@ def decrypt_to(src, password, dest):
 
 
 def _num(s):
-    return float(s.replace(",", ""))
+    return float(s.replace(",", ""))   # handles a leading "-" (negative balances)
 
 
 def _join_frag(parts):
@@ -582,6 +582,7 @@ def parse_canara(pdf):
             except ValueError:
                 pass
 
+        tail = False
         for page in doc.pages:
             text = page.extract_text() or ""
             _flush(page)
@@ -591,6 +592,7 @@ def parse_canara(pdf):
                     continue
                 m = _CANARA_ROW.match(line)
                 if m:
+                    tail = False        # a new dated row ends any footer block
                     toks = m.group(3).split()
                     money = r"^-?[\d,]+\.\d{2}$"
                     if len(toks) >= 3 and re.match(money, toks[-1]):
@@ -611,9 +613,13 @@ def parse_canara(pdf):
                         raw.append({"date": d, "frags": [desc0] if desc0 else [],
                                     "amount": amt, "balance": bal, "cheque": None})
                         continue
-                if raw and not re.search(r"TRANS|VALUE|DESCRIPTION|WITHDRAWS|DEPOSIT|BALANCE|"
-                                         r"Page \d|Opening Balance|Closing Balance|Statement of|"
-                                         r"CANARA BANK|Total ", line):
+                if re.search(r"TRANS|VALUE|DESCRIPTION|WITHDRAWS|DEPOSIT|BALANCE|"
+                             r"Page \d|Opening Balance|Closing Balance|Statement of|"
+                             r"CANARA BANK|Total |Statement Summary|Clear balance|"
+                             r"UNLESS THE CONSTITUENT|DISCREPANC|Funds as on", line, re.I):
+                    tail = True         # footer/summary block — ignore until the next dated row
+                    continue
+                if raw and not tail:
                     raw[-1]["frags"].append(line)
     txns = [{"date": r["date"], "desc": _join_frag(r["frags"]) or '""', "amount": r["amount"],
              "balance": r["balance"], "cheque": r["cheque"]} for r in raw]
@@ -667,6 +673,7 @@ def parse_indian_soa(pdf):
         if m:
             meta["name"] = m.group(1).strip()
 
+        tail = False
         for page in doc.pages:
             for line in (page.extract_text() or "").splitlines():
                 line = line.strip()
@@ -676,6 +683,7 @@ def parse_indian_soa(pdf):
                     continue
                 m = _ISOA_ROW.match(line)
                 if m:
+                    tail = False        # a new dated row ends any footer block
                     try:
                         d = datetime.datetime.strptime(m.group(1), "%d/%m/%y").date()
                     except ValueError:
@@ -694,9 +702,12 @@ def parse_indian_soa(pdf):
                     prev_bal = bal
                     raw.append({"date": d, "frags": [details] if details else [],
                                 "amount": signed, "balance": bal, "cheque": None})
-                elif raw and not re.search(
+                elif re.search(
                         r"Brought Forward|Carried Forward|Statement Summary|Post Date|Value Date|"
-                        r"In Case Your|Page No|STATEMENT OF ACCOUNT|Account No\b", line):
+                        r"In Case Your|Page No|STATEMENT OF ACCOUNT|Account No\b|"
+                        r"CLOSING BALANCE\s*:|Statement From|Statement Date|Statement Time", line, re.I):
+                    tail = True         # footer/summary block — ignore until the next dated row
+                elif raw and not tail:
                     raw[-1]["frags"].append(line)
     txns = [{"date": r["date"], "desc": _join_frag(r["frags"]) or '""', "amount": r["amount"],
              "balance": r["balance"], "cheque": None} for r in raw]
@@ -708,7 +719,7 @@ def parse_indian_soa(pdf):
 
 # --------------------------------------------------------------- HDFC
 _HDFC_DATE = re.compile(r"^\d{2}/\d{2}/\d{2}$")
-_HDFC_AMT = re.compile(r"^[\d,]+\.\d{2}$")
+_HDFC_AMT = re.compile(r"^-?[\d,]+\.\d{2}$")   # HDFC prints negative balances (overdrawn / cheque-return pairs)
 
 
 def parse_hdfc(pdf):
