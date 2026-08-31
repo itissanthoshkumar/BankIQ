@@ -32,6 +32,15 @@
         ],
         "createdAt": "2026-08-30T13:25:45.211Z",
         "reason": "Delete button: resting text-zinc-500 sits on white; hover applies bg-rose-50 AND text-rose-600 together, so gray never sits on the rose bg. Triaged twice before; re-fires on line shifts under this path scope."
+      },
+      {
+        "rule": "gray-on-color",
+        "value": "*",
+        "files": [
+          "webui/src/ui.jsx"
+        ],
+        "createdAt": "2026-08-30T13:36:46.510Z",
+        "reason": "ExpiryChip neutral state: text-zinc-600 on bg-zinc-100 is ~7:1 contrast (passes AA comfortably) and matches the app's established Pill/INFO-severity idiom. Real issue at zinc-500 was already fixed; detector re-fires on any gray-on-tint regardless of measured contrast."
       }
     ]
   }

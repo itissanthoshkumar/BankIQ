@@ -179,7 +179,7 @@ export const FULL_METRICS = [
  {
   "name": "Total Amount of Cash Withdrawals",
   "how": "Sum of magnitudes (negated amounts) of category 'Cash Withdrawal' transactions.",
-  "ex": "In Mr. PALA SRINIVAS's statement the Overall figure is ₹-219,802."
+  "ex": "In Mr. PALA SRINIVAS's statement the Overall figure is ₹40,000."
  },
  {
   "name": "Total Amount of Loan Credit",
@@ -239,7 +239,7 @@ export const FULL_METRICS = [
  {
   "name": "Total No. of NEFT Transaction Credit",
   "how": "Count of credit transactions (money coming IN) whose description rail is NEFT.",
-  "ex": "In Mr. PALA SRINIVAS's statement the Overall figure is 0."
+  "ex": "In Mr. PALA SRINIVAS's statement the Overall figure is 1."
  },
  {
   "name": "Total No. of RTGS Transaction Credit",
@@ -274,7 +274,7 @@ export const FULL_METRICS = [
  {
   "name": "Total No. of ATM Transaction Credit",
   "how": "Count of credit transactions (money coming IN) whose description rail is ATM, AEPS or UPI-ATM (all mapped to 'ATM').",
-  "ex": "In Mr. PALA SRINIVAS's statement the Overall figure is 1."
+  "ex": "In Mr. PALA SRINIVAS's statement the Overall figure is 0."
  },
  {
   "name": "Total No. of Fund Transfer Transaction Credit",
@@ -294,7 +294,7 @@ export const FULL_METRICS = [
  {
   "name": "Total Amount of NEFT Transaction Credit",
   "how": "Sum of amounts of credit transactions on the NEFT rail.",
-  "ex": "In Mr. PALA SRINIVAS's statement the Overall figure is ₹0."
+  "ex": "In Mr. PALA SRINIVAS's statement the Overall figure is ₹249,802."
  },
  {
   "name": "Total Amount of RTGS Transaction Credit",
@@ -329,7 +329,7 @@ export const FULL_METRICS = [
  {
   "name": "Total Amount of ATM Transaction Credit",
   "how": "Sum of amounts of credit transactions on the ATM/AEPS/UPI-ATM rails.",
-  "ex": "In Mr. PALA SRINIVAS's statement the Overall figure is ₹249,802."
+  "ex": "In Mr. PALA SRINIVAS's statement the Overall figure is ₹0."
  },
  {
   "name": "Total Amount of Fund Transfer Transaction Credit",
@@ -384,12 +384,12 @@ export const FULL_METRICS = [
  {
   "name": "Total No. of ATM Transaction Debit",
   "how": "Count of debit transactions (money going OUT) on the ATM/AEPS/UPI-ATM rails.",
-  "ex": "In Mr. PALA SRINIVAS's statement the Overall figure is 2."
+  "ex": "In Mr. PALA SRINIVAS's statement the Overall figure is 3."
  },
  {
   "name": "Total No. of Fund Transfer Transaction Debit",
   "how": "Count of debit transactions (money going OUT) with no detected rail (rail_of OTHER → 'Fund Transfer').",
-  "ex": "In Mr. PALA SRINIVAS's statement the Overall figure is 3."
+  "ex": "In Mr. PALA SRINIVAS's statement the Overall figure is 2."
  },
  {
   "name": "Total No. of Other Transaction Debit",
@@ -439,12 +439,12 @@ export const FULL_METRICS = [
  {
   "name": "Total Amount of ATM Transaction Debit",
   "how": "Sum of debit magnitudes on the ATM/AEPS/UPI-ATM rails.",
-  "ex": "In Mr. PALA SRINIVAS's statement the Overall figure is ₹30,000."
+  "ex": "In Mr. PALA SRINIVAS's statement the Overall figure is ₹40,000."
  },
  {
   "name": "Total Amount of Fund Transfer Transaction Debit",
   "how": "Sum of debit magnitudes for transactions with no detected rail ('Fund Transfer').",
-  "ex": "In Mr. PALA SRINIVAS's statement the Overall figure is ₹61,000."
+  "ex": "In Mr. PALA SRINIVAS's statement the Overall figure is ₹51,000."
  },
  {
   "name": "Total Amount of Other Transaction Debit",
@@ -654,7 +654,7 @@ export const FULL_METRICS = [
  {
   "name": "Total Amount of Cash Withdrawals Transaction",
   "how": "Sum of absolute amounts of transactions in the 'Cash Withdrawals' bucket.",
-  "ex": "In Mr. PALA SRINIVAS's statement the Overall figure is ₹279,802."
+  "ex": "In Mr. PALA SRINIVAS's statement the Overall figure is ₹40,000."
  },
  {
   "name": "Total Amount of Personal Loan Transaction",
@@ -689,7 +689,7 @@ export const FULL_METRICS = [
  {
   "name": "Total Amount of Other Category Transaction",
   "how": "Sum of absolute amounts of transactions falling into the residual 'Other Category' bucket.",
-  "ex": "In Mr. PALA SRINIVAS's statement the Overall figure is ₹1,973,457."
+  "ex": "In Mr. PALA SRINIVAS's statement the Overall figure is ₹2,213,259."
  },
  {
   "name": "Total No. of Business Credit Transactions",

@@ -442,6 +442,10 @@ def parse_sbi(pdf):
 # i.e. TxnDate ValueDate <desc> <Ref> <Debit> <Credit> <Balance>, with '-' as an empty cell.
 _SOA_ROW = re.compile(r"^(\d{2}/\d{2}/\d{4})\s+(\d{2}/\d{2}/\d{4})\s+(.+)$")
 _SOA_TYPE = re.compile(r"^(WDL|DEP)\s+[A-Z]{2,4}$")          # row-type marker line (WDL TFR / DEP CSH …)
+# a row's HEADER narration printed on its own line ABOVE the dated line (ATM rows do
+# this) — must attach to the NEXT transaction, never glue onto the previous one
+_SOA_LEAD = re.compile(r"^(?:ATM WDL|WDL ATM|ATM CASH)\b.*$")
+_SOA_PAGE = re.compile(r"^Page no\.?\s*\d+\s*$", re.I)       # page footer — drop entirely
 _SOA_MONEY = re.compile(r"^-?[\d,]+\.\d{2}$")
 
 
@@ -500,12 +504,16 @@ def parse_sbi_soa(pdf):
             except ValueError:
                 pass
 
+        lead = []   # header lines that belong to the NEXT dated row (e.g. "ATM WDL ATM CASH")
         for page in doc.pages:
             text = page.extract_text() or ""
             _flush(page)
             for line in text.splitlines():
                 line = line.strip()
-                if not line or _SOA_TYPE.match(line):
+                if not line or _SOA_TYPE.match(line) or _SOA_PAGE.match(line):
+                    continue
+                if _SOA_LEAD.match(line):
+                    lead.append(line)
                     continue
                 m = _SOA_ROW.match(line)
                 if m:
@@ -517,6 +525,9 @@ def parse_sbi_soa(pdf):
                         cheque = None if toks[-4] == "-" else toks[-4]
                         # some rows print the WDL/DEP type marker inline instead of the desc
                         desc0 = re.sub(r"^(?:WDL|DEP)\s+[A-Z]{2,4}\b", "", " ".join(toks[:-4])).strip()
+                        if lead:
+                            desc0 = " ".join(lead + ([desc0] if desc0 else []))
+                            lead = []
                         amt = -abs(debit) if debit else (abs(credit) if credit else 0.0)
                         try:
                             d = datetime.datetime.strptime(m.group(1), "%d/%m/%Y").date()

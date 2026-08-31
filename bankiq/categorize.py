@@ -104,9 +104,9 @@ def categorize(txn, meta):
         return "Subsidy"
     if re.search(r"^UPI/REV/", desc):
         return "Reversal"
-    if re.search(r"^BY CASH$|^CDM\d|CASH DEPOSIT", desc):
+    if credit and re.search(r"^BY CASH$|^CDM\d|CASH DEPOSIT", desc):
         return "Cash Deposit"
-    if re.search(r"AEPS-ONUS-CW|ATM CASH|TO ATM WDL|^SELF$|CASH WITHDRAWAL BY CHQ|CASH WDL", desc):
+    if not credit and re.search(r"AEPS-ONUS-CW|ATM CASH|TO ATM WDL|^SELF$|CASH WITHDRAWAL BY CHQ|CASH WDL", desc):
         return "Cash Withdrawal"
     if re.search(r"CREDIT CARD PAYMENT", desc):
         return "Credit Card Payment"
