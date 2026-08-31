@@ -23,7 +23,12 @@ def _clean_party(name):
 
 
 def _upi_fields(desc, bank):
-    """(party, handle) from a UPI description, else (None, None)."""
+    """(party, handle) from a UPI/IMPS description, else (None, None).
+
+    Bank-specific layouts are tried first (they are the most exact), then a set of
+    format-driven fallbacks so ANY bank's narration resolves a counterparty name —
+    without this, statements from banks we haven't hand-tuned fall through to
+    "Others" and the Parties ledger / Top-5 / Spend Analysis come out empty."""
     m = None
     if bank == "Union Bank of India":
         m = re.match(r"^UPI(?:AR|AB)/\d+/(?:DR|CR)/([^/]*)/[^/]*/(.*)$", desc)
@@ -36,6 +41,19 @@ def _upi_fields(desc, bank):
             return m.group(1), m.group(3).split("/")[0]
         m = re.match(r"^UPI/(?:DR|CR)/\d+/([^/]*)/[^/]*/(.*)$", desc)
     if not m:
+        # ---- bank-agnostic fallbacks ----
+        # IOB / others: UPI/<ref>/DR|CR/<NAME>/<BANK>/<purpose>   (ref before DR/CR)
+        m = re.match(r"^UPI/\d+/(?:DR|CR)/(.+?)/([A-Za-z]{3,4})/(.*)$", desc)
+        if m:
+            return m.group(1), m.group(2)
+        # HDFC style: UPI-<NAME>-<vpa>-<ifsc>-<ref>-<purpose>
+        m = re.match(r"^UPI-([^-]+)-([^-]*)-", desc)
+        if m:
+            return m.group(1), m.group(2).split("@")[0]
+        # IMPS: IMPS/<ref>/<NAME>/<BANK>/...
+        m = re.match(r"^IMPS/\d+/([^/]+)/([A-Za-z]{3,4})/", desc)
+        if m:
+            return m.group(1), m.group(2)
         return None, None
     handle = m.group(2).split("/")[0]
     return m.group(1), handle
@@ -48,7 +66,10 @@ def _is_self_name(party, holder):
         if h.startswith(hon) and len(h) > len(hon) + 3:
             h = h[len(hon):]
             break
-    if not p or len(p) < 4:
+    # BOTH names must be substantial: with an empty/short holder name every
+    # counterparty would "match" (p.startswith("") is always True), silently
+    # turning the whole ledger into self-transfers.
+    if not p or len(p) < 4 or not h or len(h) < 4:
         return False
     return h.startswith(p) or p.startswith(h)
 

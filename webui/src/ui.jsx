@@ -218,7 +218,7 @@ export function BarRow({ label, value, max, tint = "bg-accent" }) {
   const w = max ? Math.max(2, (Math.abs(value) / max) * 100) : 0;
   return (
     <div className="flex items-center gap-3 text-[13px]">
-      <span className="w-40 shrink-0 truncate text-zinc-600" title={label}>{label}</span>
+      <span className="w-56 shrink-0 truncate text-zinc-600" title={label}>{label}</span>
       <span className="h-2 flex-1 overflow-hidden rounded-full bg-zinc-100">
         <motion.span className={`block h-full rounded-full ${tint}`} initial={{ width: 0 }} animate={{ width: w + "%" }} transition={{ ...spring, damping: 24 }} />
       </span>

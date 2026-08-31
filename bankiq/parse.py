@@ -717,6 +717,107 @@ def parse_indian_soa(pdf):
     return meta
 
 
+# ------------------------------------------ Indian Overseas Bank (IOB)
+# Columns: DATE | CHQ NO | NARRATION | COD | DEBIT | CREDIT | BALANCE
+# Only one of DEBIT/CREDIT is printed per row, so the x-position of the amount
+# decides the sign; the COD column (TRF/CSH/CLG) must be kept OUT of the narration.
+_IOB_DATE = re.compile(r"^\d{2}-[A-Za-z]{3}-\d{4}$")
+_IOB_MONEY = re.compile(r"^[\d,]+\.\d{2}$")
+
+
+def parse_iob(pdf):
+    meta = {"bank": "Indian Overseas Bank", "institution": "Indian Overseas Bank, India",
+            "mobile": None, "email": None, "pan": None, "account_type": None,
+            "ifsc": None, "period": None, "name": None, "address": None,
+            "account_no": None, "account_name": None}
+    raw = []
+    with _open(pdf) as doc:
+        head = "\n".join((doc.pages[i].extract_text() or "") for i in range(min(2, len(doc.pages))))
+        m = re.search(r"IFSC\s*CODE\s*:?\s*([A-Z]{4}0[A-Z0-9]{6})", head, re.I)
+        if m:
+            meta["ifsc"] = m.group(1).upper()
+        m = re.search(r"Account\s*Number\s*[-:]\s*(\d{6,})", head, re.I)
+        if m:
+            meta["account_no"] = m.group(1)
+        m = re.search(r"Account\s*Number\s*[-:]\s*\d{6,}\s+([A-Z][A-Z .]{2,50}?)(?:\s+MANCODE|\s{2,}|$)",
+                      head, re.M)
+        if m:
+            meta["name"] = re.sub(r"\s+", " ", m.group(1)).strip(" .")
+        m = re.search(r"Scheme\s*Code\s*:\s*([^\n]+)", head, re.I)
+        if m:
+            meta["account_type"] = "Savings Account" if re.search(r"SAV|SB", m.group(1), re.I) else m.group(1).strip()[:40]
+        m = re.search(r"period\s+from\s+(\d{2}/\d{2}/\d{4})\s+to\s+(\d{2}/\d{2}/\d{4})", head, re.I)
+        if m:
+            try:
+                meta["period"] = (datetime.datetime.strptime(m.group(1), "%d/%m/%Y").date(),
+                                  datetime.datetime.strptime(m.group(2), "%d/%m/%Y").date())
+            except ValueError:
+                pass
+
+        xcod = xdr = xcr = xbal = None       # column anchors persist across pages
+        for page in doc.pages:
+            for _top, ws in _rows_from_words(page):
+                texts = [w["text"] for w in ws]
+                joined = " ".join(texts)
+                # header row -> (re)learn the column x-centres
+                if "NARRATION" in joined and "BALANCE" in joined:
+                    for w in ws:
+                        cx = (w["x0"] + w["x1"]) / 2
+                        t = w["text"].upper()
+                        if t == "COD":
+                            xcod = cx
+                        elif t == "DEBIT":
+                            xdr = cx
+                        elif t == "CREDIT":
+                            xcr = cx
+                        elif t == "BALANCE":
+                            xbal = cx
+                    continue
+                if xbal is None:
+                    continue
+                narr_limit = (xcod - 18) if xcod else 292
+                if texts and _IOB_DATE.match(texts[0]):
+                    debit = credit = balance = None
+                    for w in ws[1:]:
+                        if not _IOB_MONEY.match(w["text"]):
+                            continue
+                        cx = (w["x0"] + w["x1"]) / 2
+                        if cx < narr_limit:
+                            continue                     # a number inside the narration
+                        cand = {"d": abs(cx - xdr) if xdr else 1e9,
+                                "c": abs(cx - xcr) if xcr else 1e9,
+                                "b": abs(cx - xbal)}
+                        pick = min(cand, key=cand.get)
+                        v = _num(w["text"])
+                        if pick == "b":
+                            balance = v
+                        elif pick == "d":
+                            debit = v
+                        else:
+                            credit = v
+                    narr = [w["text"] for w in ws[1:]
+                            if (w["x0"] + w["x1"]) / 2 < narr_limit]
+                    try:
+                        d = datetime.datetime.strptime(texts[0], "%d-%b-%Y").date()
+                    except ValueError:
+                        continue
+                    amt = (credit or 0.0) - (debit or 0.0)
+                    raw.append({"date": d, "frags": [" ".join(narr)] if narr else [],
+                                "amount": amt, "balance": balance})
+                elif raw and texts and not _IOB_MONEY.match(texts[0]):
+                    # continuation line — narration column only
+                    cont = [w["text"] for w in ws if (w["x0"] + w["x1"]) / 2 < narr_limit]
+                    if cont and not re.search(r"Statement for the period|DATE|NARRATION|Page\b",
+                                              " ".join(cont), re.I):
+                        raw[-1]["frags"].append(" ".join(cont))
+    txns = [{"date": r["date"], "desc": _join_frag(r["frags"]) or '""', "amount": r["amount"],
+             "balance": r["balance"], "cheque": None} for r in raw]
+    if not meta["period"] and txns:
+        meta["period"] = (min(t["date"] for t in txns), max(t["date"] for t in txns))
+    meta["transactions"] = txns
+    return meta
+
+
 # --------------------------------------------------------------- HDFC
 _HDFC_DATE = re.compile(r"^\d{2}/\d{2}/\d{2}$")
 _HDFC_AMT = re.compile(r"^-?[\d,]+\.\d{2}$")   # HDFC prints negative balances (overdrawn / cheque-return pairs)
@@ -892,12 +993,31 @@ def parse_generic(pdf):
     with _open(pdf) as doc:
         first = doc.pages[0].extract_text() or ""
         # best-effort metadata — the account's OWN IFSC (labelled), never a counterparty's
-        m = re.search(r"(?:RTGS/NEFT\s*)?IFSC\s*(?:Code)?\s*[:\-]?\s*([A-Z]{4}0[A-Z0-9]{6})", first)
+        # case-insensitive "Code" — banks print "IFSC CODE :", "IFSC Code:", "IFSC:"
+        m = re.search(r"(?:RTGS/NEFT\s*)?IFSC\s*(?:CODE)?\s*[:\-]?\s*([A-Z]{4}0[A-Z0-9]{6})", first, re.I)
         if m:
-            meta["ifsc"] = m.group(1)
+            meta["ifsc"] = m.group(1).upper()
         m = re.search(r"(?:Account\s*(?:No|Number)|A/?c\s*(?:No|Number)?)\s*[:\-]?\s*(\d{6,})", first, re.I)
         if m:
             meta["account_no"] = m.group(1)
+        # account holder name — several common labelled forms, plus IOB's
+        # "Account Number - <digits> <NAME>" header line
+        for pat in (r"(?:Customer|Account|Holder)\s*Name\s*[:\-]\s*([A-Za-z][A-Za-z .]{2,60}?)\s*$",
+                    r"Account\s*Number\s*[-:]\s*\d{6,}\s+([A-Z][A-Z .]{2,60}?)(?:\s{2,}|\s+MANCODE|\s*$)",
+                    r"^\s*(?:MR|MRS|MS|M/S)\.?\s+([A-Z][A-Za-z .]{2,60})\s*$"):
+            m = re.search(pat, first, re.M)
+            if m:
+                nm = re.sub(r"\s+", " ", m.group(1)).strip(" .")
+                if nm and not re.search(r"BANK|BRANCH|STATEMENT", nm, re.I):
+                    meta["name"] = nm
+                    break
+        # account type from a scheme/product line
+        m = re.search(r"(?:Scheme\s*Code|Product|Account\s*Type)\s*[:\-]\s*([^\n]{3,60})", first, re.I)
+        if m:
+            prod = m.group(1)
+            meta["account_type"] = ("Savings Account" if re.search(r"SAV|SB\b", prod, re.I)
+                                    else "Current Account" if re.search(r"CURRENT|\bCA\b", prod, re.I)
+                                    else prod.strip()[:40])
         # bank name: prefer the reliable IFSC-prefix mapping, else a labelled bank line
         if meta["ifsc"] and meta["ifsc"][:4] in _IFSC_BANK:
             meta["bank"] = _IFSC_BANK[meta["ifsc"][:4]]
@@ -906,7 +1026,7 @@ def parse_generic(pdf):
             if m:
                 meta["bank"] = re.sub(r"\s+", " ", m.group(1).title()).strip()
         meta["institution"] = f"{meta['bank']}, India"
-        m = re.search(r"(?:From|Period)\s*[:\-]?\s*(\d{2}[/-][A-Za-z0-9]{2,3}[/-]\d{2,4})\s*(?:To|to|-)\s*(\d{2}[/-][A-Za-z0-9]{2,3}[/-]\d{2,4})", first)
+        m = re.search(r"(?:period\s+from|From|Period)\s*[:\-]?\s*(\d{2}[/-][A-Za-z0-9]{2,3}[/-]\d{2,4})\s*(?:To|to|-)\s*(\d{2}[/-][A-Za-z0-9]{2,3}[/-]\d{2,4})", first, re.I)
         if m:
             d1, d2 = _detect_date(m.group(1)), _detect_date(m.group(2))
             if d1 and d2:
@@ -1086,6 +1206,8 @@ def parse_statement(pdf, password=None, workdir=None):
         meta = parse_hdfc(dec)
     elif "Customer/CIF ID" in first or re.search(r"IFSC\s+UBIN", first):
         meta = parse_union_bank(dec)
+    elif re.search(r"IFSC\s*CODE\s*:?\s*IOBA", first, re.I) or "INDIAN OVERSEAS BANK" in up:
+        meta = parse_iob(dec)
     elif re.search(r"IFSC\s*Code\s*:?\s*IDIB", first) and "Post Date" in first and "Value Date" in first:
         meta = parse_indian_soa(dec)          # Indian Bank net-banking "Statement of Account"
     else:

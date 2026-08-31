@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { Wallet, TrendUp, TrendDown, Bank, Percent, ArrowsLeftRight, MagnifyingGlass, ArrowRight, CaretDown, ShieldWarning, CheckCircle } from "@phosphor-icons/react";
+import { Wallet, TrendUp, TrendDown, Bank, Percent, ArrowsLeftRight, MagnifyingGlass, ArrowRight, CaretDown, ShieldWarning, CheckCircle, Vault, WarningDiamond, CalendarBlank } from "@phosphor-icons/react";
 import { inr, num, fmtDate, monthLabel } from "./api";
 import { Card, SectionTitle, DataTable, BarRow, Count, Sev, dot, Pill, Empty, Help, stagger, rise, spring } from "./ui";
 import { helpFor, metricHelp } from "./guideContent";
@@ -96,6 +96,9 @@ function Summary({ P }) {
         </motion.div>
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <Stat icon={Vault} label={`Last day balance · ${fmtDate(s.period_end)}`} value={s.closing_balance} prefix="₹" dec={2} accent="indigo" help={helpFor("summary", "Last day balance")} />
+          <Stat icon={WarningDiamond} label="Min balance in period" value={bh.min_balance} prefix="₹" dec={2} accent={bh.min_balance < 100 ? "rose" : "amber"} help={helpFor("summary", "Min balance")} />
+          <Stat icon={CalendarBlank} label="Days below ₹1,000" value={`${num(bh.days_below_1000)} / ${num(bh.total_days)}`} plain accent={bh.days_below_1000 > bh.total_days * 0.25 ? "rose" : "sky"} help={helpFor("summary", "Days below")} />
           <Stat icon={Wallet} label="Monthly income" value={monthlyInc} prefix="₹" accent="emerald" help={helpFor("summary", "Monthly income")} />
           <Stat icon={TrendUp} label="Gross credits" value={s.gross_credits} prefix="₹" accent="sky" help={helpFor("summary", "Gross credits")} />
           <Stat icon={TrendDown} label="Gross debits" value={s.gross_debits} prefix="₹" accent="rose" help={helpFor("summary", "Gross debits")} />
@@ -134,17 +137,15 @@ function Summary({ P }) {
           <Card><div className="px-4 pt-3 pb-1 text-[13px] font-bold text-zinc-800">Income &amp; obligations</div>
             <Row k="Income type" v={incomeType} help={helpFor("summary", "Income type")} />
             <Row k="Monthly avg income" v={inr(monthlyInc)} help={helpFor("summary", "Monthly income")} />
-            <Row k="Classified income" v={inr(s.classified_income)} help={helpFor("summary", "Monthly income")} />
+            <Row k="Classified income" v={inr(s.classified_income)} help={helpFor("summary", "Classified income")} />
             <Row k="Active lenders" v={top ? num(P.loan_analysis.length) : "0"} help={helpFor("summary", "Active lenders")} />
-            <Row k="Top lender" v={top ? `${top.lender} · ${inr(top.total)}` : "—"} help={helpFor("summary", "Active lenders")} />
+            <Row k="Top lender" v={top ? `${top.lender} · ${inr(top.total)}` : "—"} help={helpFor("summary", "Top lender")} />
             <Row k="Obligation / inflow" v={s.obligation_to_inflow_pct == null ? "—" : s.obligation_to_inflow_pct + "%"} tone={s.obligation_to_inflow_pct > 30 ? "warn" : ""} help={helpFor("summary", "Obligation / inflow %")} />
           </Card>
           <Card><div className="px-4 pt-3 pb-1 text-[13px] font-bold text-zinc-800">Behaviour &amp; risk</div>
             <Row k="Lifestyle flags" v={life.length ? life.map((l) => l.flag).join(", ") : "None"} tone={life.length ? "warn" : "good"} help={helpFor("flags", "Lifestyle flags")} />
             <Row k="Cash-cycle (F02)" v={cc && cc.fired ? `${cc.count} instances` : "None"} tone={cc && cc.fired ? "bad" : "good"} help={helpFor("flags", "F02")} />
             <Row k="Round-tripping (F03)" v={rt && rt.fired ? `${rt.count} parties` : "None"} tone={rt && rt.fired ? "warn" : "good"} help={helpFor("flags", "F03")} />
-            <Row k="Min balance" v={inr(bh.min_balance)} tone={bh.min_balance < 100 ? "warn" : ""} help={helpFor("summary", "Behaviour & risk rows")} />
-            <Row k="Days below ₹1,000" v={`${num(bh.days_below_1000)} / ${num(bh.total_days)}`} help={helpFor("summary", "Behaviour & risk rows")} />
             <Row k="Dominant payee" v={dom ? dom.party : "—"} help={helpFor("summary", "Dominant payee")} />
           </Card>
         </motion.div>
@@ -329,9 +330,9 @@ function Spend({ P }) {
     <div className="space-y-5">
       <div><SectionTitle help={helpFor("spend", "Category rows")}>Spend by category</SectionTitle>
         <DataTable rows={rows} empty={<Empty title="No categorised spend" />} cols={[
-          { h: "Category", cell: (r) => <span className="flex items-center gap-2">{r.category}{r.lifestyle && <Sev s="RED" />}</span>, help: helpFor("spend", "Lifestyle pill") },
+          { h: "Category", cell: (r) => <span className="flex items-center gap-2">{r.category}{r.lifestyle && <Sev s="RED" />}</span>, help: helpFor("spend", "Category column") },
           ...P.months.map((m, i) => ({ h: monthLabel(m), num: true, cell: (r) => r.monthly[i] ? num(r.monthly[i]) : "" })),
-          { h: "Total", num: true, cell: (r) => <b>{num(r.total, 2)}</b> }, { h: "Count", num: true, cell: (r) => num(r.count) }, { h: "% debits", num: true, cell: (r) => r.pct_of_debits + "%", help: helpFor("spend", "Category rows") },
+          { h: "Total", num: true, cell: (r) => <b>{num(r.total, 2)}</b> }, { h: "Count", num: true, cell: (r) => num(r.count) }, { h: "% debits", num: true, cell: (r) => r.pct_of_debits + "%", help: helpFor("spend", "% debits column") },
         ]} /></div>
       {P.lifestyle.length > 0 && <div><SectionTitle help={helpFor("flags", "Lifestyle flags")}>Lifestyle detail</SectionTitle><DataTable maxH="30vh" rows={P.lifestyle} cols={[
         { h: "Category", cell: (l) => l.flag }, { h: "Txns", num: true, cell: (l) => num(l.txn_count) }, { h: "Total", num: true, cell: (l) => num(l.amount, 2) },
@@ -386,7 +387,7 @@ function Parties({ P }) {
       ]} /></div>
       <div className="grid gap-4 lg:grid-cols-2">
         {[["Received", P.top5_credit, "bg-emerald-500"], ["Transferred", P.top5_debit, "bg-rose-400"]].map(([title, data, tint]) => (
-          <Card key={title} className="p-5"><SectionTitle help={helpFor("parties", "Monthly Top-5")}>Monthly Top-5 {title}</SectionTitle>
+          <Card key={title} className="p-5"><SectionTitle help={helpFor("parties", "Monthly Top-5")} right={<Help {...helpFor("parties", "Why Top-5 can show names")} />}>Monthly Top-5 {title}</SectionTitle>
             {Object.entries(data).map(([m, list]) => list.length ? <div key={m}><div className="mb-1 mt-2 text-[11px] text-zinc-400">{monthLabel(m)}</div>{list.map((r, i) => <BarRow key={i} label={r.desc} value={r.amount} max={Math.max(1, ...list.map((x) => x.amount))} tint={tint} />)}</div> : null)}
           </Card>
         ))}

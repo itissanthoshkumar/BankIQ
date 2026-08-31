@@ -41,7 +41,7 @@ SPA = os.path.join(HERE, "spa")            # built React app (vite build output)
 # ── zero-storage configuration ───────────────────────────────────────────────
 RETENTION_MINUTES = int(os.environ.get("RETENTION_MINUTES", "60"))
 MAX_STATEMENTS = int(os.environ.get("MAX_STATEMENTS", "25"))
-MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "30"))
+MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "75"))   # UPI-heavy statements run large
 PDF_HOLD_MAX = 5          # max records allowed to pin raw PDF bytes (NEEDS_PASSWORD)
 STALE_PARSING_S = 1200    # PARSING with no result for 20 min → the worker died
 DEBUG = bool(os.environ.get("DEBUG"))
