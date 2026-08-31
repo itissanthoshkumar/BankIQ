@@ -501,6 +501,9 @@ def qc_block(meta):
         "txn_count": len(txns),
         "missing_ranges": missing,
         "duplicate_count": dups,
+        "unclassified": [{"date": t["date"].isoformat(), "description": t["desc"],
+                          "amount": round(t["amount"], 2), "balance": round(t["balance"], 2)}
+                         for t in txns if t["category"] == "Others"][:200],
         "categorisation_coverage_pct": round(100 * (1 - other_cnt / max(len(txns), 1)), 1),
         "categorisation_coverage_amt_pct": round(100 * (1 - other_amt / tot_amt), 1),
         "balance_continuity_breaks": breaks,

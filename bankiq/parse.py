@@ -590,6 +590,7 @@ def parse_canara(pdf):
                 line = line.strip()
                 if not line:
                     continue
+                line = re.sub(r"\s*\b\d{1,3}\s+Confidential\s*$", "", line).strip()
                 m = _CANARA_ROW.match(line)
                 if m:
                     tail = False        # a new dated row ends any footer block
@@ -613,10 +614,14 @@ def parse_canara(pdf):
                         raw.append({"date": d, "frags": [desc0] if desc0 else [],
                                     "amount": amt, "balance": bal, "cheque": None})
                         continue
+                # page watermark ("12 Confidential") — strip before anything else
+                line = re.sub(r"\s*\b\d{1,3}\s+Confidential\s*$", "", line).strip()
+                if not line:
+                    continue
                 if re.search(r"TRANS|VALUE|DESCRIPTION|WITHDRAWS|DEPOSIT|BALANCE|"
                              r"Page \d|Opening Balance|Closing Balance|Statement of|"
                              r"CANARA BANK|Total |Statement Summary|Clear balance|"
-                             r"UNLESS THE CONSTITUENT|DISCREPANC|Funds as on", line, re.I):
+                             r"UNLESS THE CONSTITUENT|DISCREPANC|Funds as on|^Confidential$", line, re.I):
                     tail = True         # footer/summary block — ignore until the next dated row
                     continue
                 if raw and not tail:

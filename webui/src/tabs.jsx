@@ -484,6 +484,18 @@ function QC({ P }) {
     <div className="space-y-4">
       <SectionTitle help={helpFor("qc", "Balance continuity")}>Validation &amp; QC</SectionTitle>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">{kv.map(([l, v, w]) => { const h = qh(l); return <div key={l} className={`rounded-2xl border p-4 shadow-soft ${w === "warn" ? "border-amber-200 bg-amber-50/60" : "border-zinc-200/70 bg-white"}`}><div className={`flex items-center gap-1 text-[10.5px] font-semibold uppercase tracking-wide ${w === "warn" ? "text-amber-700/80" : "text-zinc-500"}`}>{l}{h && <Help {...h} />}</div><div className={`tnum mt-1 text-[15px] font-bold ${w === "warn" ? "text-amber-800" : "text-zinc-900"}`}>{v}</div></div>; })}</div>
+      {(q.unclassified || []).length > 0 && (
+        <div><SectionTitle help={helpFor("qc", "Unclassified transactions")}
+               right={<span className="tnum text-[12px] text-zinc-400">{num(q.unclassified.length)} row(s)</span>}>
+               Unclassified transactions (“Others”)</SectionTitle>
+          <DataTable maxH="30vh" rows={q.unclassified} cols={[
+            { h: "Date", cell: (t) => fmtDate(t.date) },
+            { h: "Description", cell: (t) => t.description || <span className="text-zinc-400">(blank in the statement)</span> },
+            { h: "Amount", num: true, cell: (t) => <span className={t.amount < 0 ? "text-rose-600" : "text-emerald-600"}>{num(t.amount, 2)}</span> },
+            { h: "Balance", num: true, cell: (t) => num(t.balance, 2) },
+            { h: "", cell: (t) => <button onClick={() => jump(t.description)} className="text-accent-fg hover:underline">view →</button> },
+          ]} /></div>
+      )}
       {q.missing_ranges.length ? <div><SectionTitle help={helpFor("qc", "Missing date ranges")}>Missing transaction ranges</SectionTitle><DataTable maxH="26vh" rows={q.missing_ranges} cols={[{ h: "From", cell: (m) => fmtDate(m.from) }, { h: "To", cell: (m) => fmtDate(m.to) }, { h: "Gap (days)", num: true, cell: (m) => m.days }]} /></div>
         : <div className="flex items-center gap-2 rounded-xl bg-emerald-50 px-4 py-3 text-[13px] font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200"><CheckCircle size={16} weight="fill" /> No missing date ranges · balance continuity intact · full extraction verified.</div>}
     </div>
