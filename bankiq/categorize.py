@@ -62,6 +62,11 @@ def _upi_fields(desc, bank):
         m = re.search(r"/IMPS/P2A/\d+/\s*/IMPS/\s*(.+?)(?:\s*/|$)", desc)
         if m:
             return m.group(1), ""
+        # aggregator layout: <IFSC>/<NAME>/XXXXX<masked>/<vpa>@<bank>/UPI/<ref>/...
+        m = re.match(r"^([A-Z]{4}0[A-Z0-9]{6})/([^/]+)/", desc)
+        if m:
+            h = re.search(r"/([A-Za-z0-9._-]+)@([A-Za-z]+)", desc)
+            return m.group(2), (h.group(1) if h else "")
         # last resort: UPI ref then a name, with no bank segment printed
         m = re.search(r"UPI/(?:DR|CR)/\d+/\s*([A-Za-z][A-Za-z .&]{2,40})", desc)
         if m:
@@ -131,7 +136,8 @@ def categorize(txn, meta):
     if re.search(r"SMS CHARGES|Sms Charges|MAINTENANCE CHARGES|DEBIT CARD CHARGE|ANN\.FEE|"
                  r"ATMCard AMC|Chrg |CONSOLIDATED CHARGES|CHG FOR |CHARGES? FOR |SERVICE CHARGE|"
                  r"^GST |GST ON |INCIDENTAL|CHRGS-|ANNUAL FEE|AMC_Charges|AMC CHARGE|"
-                 r"SMS ALERT|ALERT CHARGE|^CHGS\b", desc, re.I):
+                 r"SMS ALERT|ALERT CHARGE|^CHGS\b|SMS_CHGS|MIN BAL CHG|PASSBOOK CHG|"
+                 r"SERVICE CHARGES|_CHGS_", desc, re.I):
         return "Bank Charges"
     if re.search(r"UGRO.*?/Colle|/Colle$", desc):
         return "Bank Charges"
@@ -186,10 +192,11 @@ def categorize(txn, meta):
         return "Investment Expense"
     if re.search(r"^B/F\b|BROUGHT FORWARD|OPENING BALANCE", desc):
         return "Opening Balance"
-    if re.search(r"IB FUNDS TRANSFER|FUNDS TRANSFER|^FT-|TRANSFER FROM \d|TRANSFER TO \d|"
+    if re.search(r"IB FUNDS TRANSFER|FUNDS TRANSFER|^FT-|TRANSFER FROM \d|TRANSFER TO \d|^FROM \d|^TO \d|"
                  r"TPD-ONUS|^BY SB \d|^TO TRF", desc):
         return "Transfer in" if credit else "Transfer out"
-    if not credit and re.search(r"^NWD-|\bNWD-|TO CASH\b|-ATM-|\bATM\b.*(?:ROAD|BRANCH|MAIN)", desc):
+    if not credit and re.search(r"^NWD-|\bNWD-|TO CASH\b|-ATM-|\bATM\b.*(?:ROAD|BRANCH|MAIN)|"
+                                r"Paid to SELF", desc, re.I):
         return "Cash Withdrawal"
     if credit and re.search(r"-BNA-|\bBNA\b|CASH ACCEPT", desc):
         return "Cash Deposit"

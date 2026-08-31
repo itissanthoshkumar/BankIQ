@@ -82,6 +82,12 @@ function Summary({ P }) {
           {q.balance_continuity_breaks === 0 ? <><CheckCircle size={15} weight="fill" /> Extraction verified · {num(s.txn_count)} txns · 0 continuity errors</> : <><ShieldWarning size={15} weight="fill" /> {num(q.balance_continuity_breaks)} continuity break(s)</>}
           <H t="summary" q="Extraction verified" />
         </span>
+        {q.categorisation_coverage_pct != null && (
+          <span className={`inline-flex items-center gap-1.5 text-[12px] font-semibold ${q.categorisation_coverage_pct >= 95 ? "text-emerald-600" : "text-amber-700"}`}>
+            <CheckCircle size={15} weight="fill" /> {q.categorisation_coverage_pct}% of transactions classified
+            <H t="qc" q="Categorisation coverage" />
+          </span>
+        )}
       </motion.div>
 
       {/* bento: grade + KPIs */}

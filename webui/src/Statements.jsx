@@ -12,6 +12,7 @@ const statusTone = {
   FAILED: "bg-rose-50 text-rose-700 ring-rose-200",
   UNSUPPORTED: "bg-rose-50 text-rose-700 ring-rose-200",
   IMAGE_SKIPPED: "bg-zinc-100 text-zinc-500 ring-zinc-200",
+  LOW_COVERAGE: "bg-amber-50 text-amber-700 ring-amber-200",
 };
 const gradeTone = { A: "bg-emerald-600", B: "bg-lime-600", C: "bg-amber-500", D: "bg-orange-600", E: "bg-rose-600" };
 
@@ -77,7 +78,8 @@ export default function Statements({ retention = 60 }) {
                   <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-[12px] font-bold text-white" style={{ background: avColor(r.name || r.filename) }}>{initials(r.name || r.filename)}</span>
                   <span className="truncate font-semibold text-zinc-800">{r.name || r.filename}</span>
                 </div>
-                <span className="text-[13px] text-zinc-600">{r.bank || "—"}</span>
+                <span className="flex flex-col"><span className="text-[13px] text-zinc-600">{r.bank || "—"}</span>
+                  {r.coverage != null && <span className={`tnum text-[10.5px] ${r.coverage >= (r.min_coverage ?? 95) ? "text-emerald-600" : "text-amber-700"}`}>{r.coverage}% classified</span>}</span>
                 <span className="flex flex-col items-start gap-1"><span className="tnum text-[12px] text-zinc-500">{r.period || "—"}</span><ExpiryChip rec={r} now={now} retention={retention} onExtend={() => extend(r.id)} /></span>
                 <div className="flex flex-col items-start gap-1">
                   <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ring-inset ${statusTone[r.status] || statusTone.PARSING}`}>

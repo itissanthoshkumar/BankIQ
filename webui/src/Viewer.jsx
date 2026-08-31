@@ -25,6 +25,18 @@ export default function Viewer({ id, tab, retention = 60 }) {
   const dismissKey = rec ? `${id}:${rec.expires_at}` : "";
 
   if (!res) return <div className="space-y-4"><Skeleton className="h-14 w-full" /><div className="grid gap-4 md:grid-cols-[220px_1fr]"><Skeleton className="h-96" /><Skeleton className="h-96" /></div></div>;
+  if (!res.ok && res.body && res.body.status === "LOW_COVERAGE") return (
+    <div className="mx-auto max-w-xl rounded-3xl border border-amber-200 bg-amber-50/60 p-8 text-center">
+      <div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-amber-100 text-amber-700 text-2xl font-extrabold">!</div>
+      <h2 className="mt-3 text-lg font-extrabold text-zinc-900">Results withheld — coverage below threshold</h2>
+      <p className="mx-auto mt-2 max-w-md text-[13.5px] leading-relaxed text-zinc-600">{res.body.reason}</p>
+      <p className="mx-auto mt-3 max-w-md text-[12px] leading-relaxed text-zinc-500">
+        BankIQ only publishes an analysis it can stand behind. Showing totals built on unread
+        rows would silently understate income, spend and obligations.
+      </p>
+      <a href="#/" className="focusable mt-5 inline-block rounded-xl bg-zinc-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-zinc-800">← Back to statements</a>
+    </div>
+  );
   if (!res.ok) return (
     <div className="rounded-2xl border border-zinc-200 bg-white p-10 text-center">
       <div className="font-semibold text-zinc-800">{res.body.status || "Not ready"}</div>

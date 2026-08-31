@@ -41,12 +41,13 @@ SPA = os.path.join(HERE, "spa")            # built React app (vite build output)
 # ── zero-storage configuration ───────────────────────────────────────────────
 RETENTION_MINUTES = int(os.environ.get("RETENTION_MINUTES", "60"))
 MAX_STATEMENTS = int(os.environ.get("MAX_STATEMENTS", "25"))
-MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "75"))   # UPI-heavy statements run large
+MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "120"))  # UPI-heavy / scanned statements run large
+MIN_COVERAGE_PCT = float(os.environ.get("MIN_COVERAGE_PCT", "95"))  # results are withheld below this
 PDF_HOLD_MAX = 5          # max records allowed to pin raw PDF bytes (NEEDS_PASSWORD)
 STALE_PARSING_S = 1200    # PARSING with no result for 20 min → the worker died
 DEBUG = bool(os.environ.get("DEBUG"))
 
-TERMINAL = ("READY", "FAILED", "UNSUPPORTED", "IMAGE_SKIPPED", "EXTRACTION_SUSPECT")
+TERMINAL = ("READY", "FAILED", "UNSUPPORTED", "IMAGE_SKIPPED", "EXTRACTION_SUSPECT", "LOW_COVERAGE")
 PENDING = ("PARSING", "ANALYZING", "QUEUED")
 XLSX_MT = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
@@ -82,7 +83,8 @@ async def _security(request, call_next):
 #   pdf (bytes)     — the raw upload, kept ONLY while status is NEEDS_PASSWORD
 STATEMENTS = {}
 _LIGHT_KEYS = ("id", "filename", "uploaded_at", "status", "name",
-               "bank", "period", "grade", "reason", "expires_at")
+               "bank", "period", "grade", "reason", "expires_at",
+               "coverage", "coverage_amt", "txn_count", "min_coverage")
 
 
 def _light(rec):
@@ -199,7 +201,8 @@ def logo():
 
 @app.get("/api/meta")
 def meta():
-    return {"retention_minutes": RETENTION_MINUTES, "storage": "memory"}
+    return {"retention_minutes": RETENTION_MINUTES, "storage": "memory",
+            "min_coverage_pct": MIN_COVERAGE_PCT, "max_upload_mb": MAX_UPLOAD_MB}
 
 
 @app.get("/api/statements")
@@ -256,12 +259,28 @@ async def upload(
 
 
 def _finish_ok(rec, payload, xlsx_bytes):
+    """Store the result — but only publish it when categorisation coverage clears
+    MIN_COVERAGE_PCT. Below that the numbers can't be trusted for a decision, so
+    the record is marked LOW_COVERAGE and the analysis is withheld."""
     s = payload["summary"]
+    q = payload.get("qc", {}) or {}
+    cov = q.get("categorisation_coverage_pct")
+    cov_amt = q.get("categorisation_coverage_amt_pct")
+    unclassified = len(q.get("unclassified") or [])
     rec.pop("pdf", None)
-    rec.update(status="READY", name=s["name"], bank=s["bank"],
+    rec.update(name=s["name"], bank=s["bank"],
                period=f"{s['period_start']} → {s['period_end']}",
-               grade=payload["grade"]["grade"], reason=None,
-               payload=payload, xlsx=xlsx_bytes)
+               grade=payload["grade"]["grade"], xlsx=xlsx_bytes,
+               coverage=cov, coverage_amt=cov_amt, txn_count=s.get("txn_count"),
+               min_coverage=MIN_COVERAGE_PCT)
+    if cov is not None and cov < MIN_COVERAGE_PCT:
+        rec.update(status="LOW_COVERAGE", payload=None,
+                   reason=(f"Only {cov}% of transactions could be classified "
+                           f"(minimum {MIN_COVERAGE_PCT:g}%). {unclassified} row(s) were not "
+                           f"recognised, so the analysis is withheld rather than shown with "
+                           f"gaps. Share this statement format and it can be supported."))
+    else:
+        rec.update(status="READY", reason=None, payload=payload)
 
 
 def _run_processing(sid, data, password, extras):
@@ -337,7 +356,7 @@ def get_statement(sid: str):
 def download_xlsx(sid: str):
     _sweep()
     rec = STATEMENTS.get(sid)
-    if not rec or rec.get("xlsx") is None:
+    if not rec or rec.get("xlsx") is None or rec.get("status") != "READY":
         raise HTTPException(404, "not ready")
     name = (rec.get("name") or "report").replace(" ", "_")
     return Response(rec["xlsx"], media_type=XLSX_MT,

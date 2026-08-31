@@ -722,6 +722,108 @@ def parse_indian_soa(pdf):
     return meta
 
 
+# ------------------------------------------ "ACCOUNT ACTIVITY" / INR-prefixed layout
+# Aggregator-style export: Date | Transaction Details | Debits | Credits | Balance,
+# dates printed as three words ("01 Apr 2025"), amounts as "INR 1,000.00" with "-"
+# marking an empty column. Column x-positions decide debit vs credit vs balance.
+_ACT_DATE = re.compile(r"^(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})$")
+_ACT_MONEY = re.compile(r"^[\d,]+\.\d{2}$")
+
+
+def parse_activity_inr(pdf):
+    meta = {"bank": "Unknown Bank", "institution": "Unknown Bank, India",
+            "mobile": None, "email": None, "pan": None, "account_type": None,
+            "ifsc": None, "period": None, "name": None, "address": None,
+            "account_no": None, "account_name": None}
+    raw = []
+    with _open(pdf) as doc:
+        head = "\n".join((doc.pages[i].extract_text() or "") for i in range(min(2, len(doc.pages))))
+        m = re.search(r"Account Holder Name\s+([A-Za-z][A-Za-z .]{2,60}?)\s*$", head, re.M)
+        if m:
+            meta["name"] = re.sub(r"\s+", " ", m.group(1)).strip(" .")
+        m = re.search(r"Account Number\s+(\d{6,})", head)
+        if m:
+            meta["account_no"] = m.group(1)
+        m = re.search(r"Account Type\s+([A-Za-z ]{3,30}?)\s*$", head, re.M)
+        if m:
+            t = m.group(1).strip()
+            meta["account_type"] = "Savings Account" if re.search(r"sav", t, re.I) else t
+        m = re.search(r"IFSC\s+([A-Z]{4}0[A-Z0-9]{6})", head)
+        if m:
+            meta["ifsc"] = m.group(1)
+            if m.group(1)[:4] in _IFSC_BANK:
+                meta["bank"] = _IFSC_BANK[m.group(1)[:4]]
+                meta["institution"] = f"{meta['bank']}, India"
+        m = re.search(r"For period:\s*(\d{1,2}\s+[A-Za-z]{3}\s+\d{4})\s*[-–]\s*(\d{1,2}\s+[A-Za-z]{3}\s+\d{4})", head)
+        if m:
+            try:
+                meta["period"] = (datetime.datetime.strptime(m.group(1), "%d %b %Y").date(),
+                                  datetime.datetime.strptime(m.group(2), "%d %b %Y").date())
+            except ValueError:
+                pass
+
+        xdr = xcr = xbal = None
+        for page in doc.pages:
+            for _top, ws in _rows_from_words(page):
+                texts = [w["text"] for w in ws]
+                joined = " ".join(texts)
+                if "Transaction" in joined and "Balance" in joined and "Date" in joined:
+                    for w in ws:
+                        cx = (w["x0"] + w["x1"]) / 2
+                        t = w["text"].rstrip("s").upper()
+                        if t == "DEBIT":
+                            xdr = cx
+                        elif t == "CREDIT":
+                            xcr = cx
+                        elif t == "BALANCE":
+                            xbal = cx
+                    continue
+                if xbal is None or not texts:
+                    continue
+                narr_limit = (xdr - 22) if xdr else 280
+                dm = _ACT_DATE.match(" ".join(texts[:3])) if len(texts) >= 3 else None
+                if dm:
+                    debit = credit = balance = None
+                    for w in ws[3:]:
+                        if not _ACT_MONEY.match(w["text"]):
+                            continue
+                        cx = (w["x0"] + w["x1"]) / 2
+                        if cx < narr_limit:
+                            continue
+                        cand = {"d": abs(cx - xdr) if xdr else 1e9,
+                                "c": abs(cx - xcr) if xcr else 1e9,
+                                "b": abs(cx - xbal)}
+                        pick = min(cand, key=cand.get)
+                        v = _num(w["text"])
+                        if pick == "b":
+                            balance = v
+                        elif pick == "d":
+                            debit = v
+                        else:
+                            credit = v
+                    narr = [w["text"] for w in ws[3:]
+                            if (w["x0"] + w["x1"]) / 2 < narr_limit and w["text"] not in ("-", "INR")]
+                    try:
+                        d = datetime.datetime.strptime(" ".join(texts[:3]), "%d %b %Y").date()
+                    except ValueError:
+                        continue
+                    raw.append({"date": d, "frags": [" ".join(narr)] if narr else [],
+                                "amount": (credit or 0.0) - (debit or 0.0), "balance": balance})
+                elif raw:
+                    cont = [w["text"] for w in ws
+                            if (w["x0"] + w["x1"]) / 2 < narr_limit and w["text"] not in ("-", "INR")]
+                    j = " ".join(cont)
+                    if j and not re.search(r"ACCOUNT ACTIVITY|Transaction Details|For period|"
+                                           r"Page \d|Opening Balance|Ending Balance|Total (Credits|Debits)", j, re.I):
+                        raw[-1]["frags"].append(j)
+    txns = [{"date": r["date"], "desc": _join_frag(r["frags"]) or '""', "amount": r["amount"],
+             "balance": r["balance"], "cheque": None} for r in raw]
+    if not meta["period"] and txns:
+        meta["period"] = (min(t["date"] for t in txns), max(t["date"] for t in txns))
+    meta["transactions"] = txns
+    return meta
+
+
 # ------------------------------------------ Indian Overseas Bank (IOB)
 # Columns: DATE | CHQ NO | NARRATION | COD | DEBIT | CREDIT | BALANCE
 # Only one of DEBIT/CREDIT is printed per row, so the x-position of the amount
@@ -1211,6 +1313,8 @@ def parse_statement(pdf, password=None, workdir=None):
         meta = parse_hdfc(dec)
     elif "Customer/CIF ID" in first or re.search(r"IFSC\s+UBIN", first):
         meta = parse_union_bank(dec)
+    elif "ACCOUNT ACTIVITY" in up and re.search(r"Transaction\s+Details", first) and "INR" in up:
+        meta = parse_activity_inr(dec)
     elif re.search(r"IFSC\s*CODE\s*:?\s*IOBA", first, re.I) or "INDIAN OVERSEAS BANK" in up:
         meta = parse_iob(dec)
     elif re.search(r"IFSC\s*Code\s*:?\s*IDIB", first) and "Post Date" in first and "Value Date" in first:
