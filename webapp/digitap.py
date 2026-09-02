@@ -120,9 +120,15 @@ def build_analysis(meta, rep):
     cnt_ov = lambda vals: sum(v for v in vals.values() if isinstance(v, (int, float)))
 
     # ---- balances
-    add("Min Balance", lambda ts, m, k: (min(valid_closes(m)) if valid_closes(m) else ""),
+    # Min/Max balance are measured across the running balance after EVERY
+    # transaction, not the end-of-day series: an account can dip (even go
+    # negative) or peak intra-day and recover before the day closes, and that
+    # low/high is the risk-relevant number. This matches Digitap's definition.
+    add("Min Balance", lambda ts, m, k: (min((t["balance"] for t in ts if t["balance"] is not None),
+                                             default="") if ts else ""),
         lambda v: min((x for x in v.values() if isinstance(x, (int, float))), default=""))
-    add("Max Balance", lambda ts, m, k: (max(valid_closes(m)) if valid_closes(m) else ""),
+    add("Max Balance", lambda ts, m, k: (max((t["balance"] for t in ts if t["balance"] is not None),
+                                             default="") if ts else ""),
         lambda v: max((x for x in v.values() if isinstance(x, (int, float))), default=""))
     add("Average EOD Balance", lambda ts, m, k: _mean(valid_closes(m)),
         lambda v: _mean([x for x in v.values() if isinstance(x, (int, float))]))
