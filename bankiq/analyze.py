@@ -65,10 +65,16 @@ def opening_balance(txns):
 
 
 def eod_grid(txns, months):
-    """{month: [balance or None for day 1..31]} with carry-forward."""
+    """{month: [balance or None for day 1..31]} with carry-forward.
+
+    Days AFTER the statement's last transaction are left None: the statement
+    simply doesn't say what the balance was. Filling them with the final
+    carried-forward balance used to skew every metric computed over the last
+    (partial) month — median, ABB and the avg-till-Nth averages."""
     last_bal = {}
     for t in txns:
         last_bal[t["date"]] = t["balance"]
+    covered_to = max(last_bal) if last_bal else None
     grid = {}
     bal = opening_balance(txns)
     for m in months:
@@ -81,7 +87,7 @@ def eod_grid(txns, months):
             d = datetime.date(m.year, m.month, day)
             if d in last_bal:
                 bal = last_bal[d]
-            col.append(round(bal, 2))
+            col.append(None if (covered_to and d > covered_to) else round(bal, 2))
         grid[m] = col
     return grid
 

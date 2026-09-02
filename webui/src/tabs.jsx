@@ -198,7 +198,9 @@ function Transactions({ P }) {
   const rails = useMemo(() => [...new Set(tx.map((t) => t.rail))].sort(), [tx]);
   const [q, setQ] = useState(window.__txsearch || ""); window.__txsearch = "";
   const [fc, setFc] = useState(""); const [fr, setFr] = useState(""); const [fd, setFd] = useState("");
-  const rows = tx.filter((t) => (!q || t.description.toLowerCase().includes(q.toLowerCase())) && (!fc || t.category === fc) && (!fr || t.rail === fr) && (!fd || (fd === "cr" ? t.credit : t.debit))).slice(0, 1500);
+  const rows = tx.filter((t) => (!q || t.description.toLowerCase().includes(q.toLowerCase())) && (!fc || t.category === fc) && (!fr || t.rail === fr) && (!fd || (fd === "cr" ? t.credit : t.debit)));
+  const CAP = 10000;
+  const shown = rows.slice(0, CAP);
   const sel = "focusable rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-[12.5px]";
   return (
     <div>
@@ -207,7 +209,9 @@ function Transactions({ P }) {
         <select className={sel} value={fc} onChange={(e) => setFc(e.target.value)}><option value="">All categories</option>{cats.map((c) => <option key={c}>{c}</option>)}</select>
         <select className={sel} value={fr} onChange={(e) => setFr(e.target.value)}><option value="">All rails</option>{rails.map((r) => <option key={r}>{r}</option>)}</select>
         <select className={sel} value={fd} onChange={(e) => setFd(e.target.value)}><option value="">Cr + Dr</option><option value="cr">Credits</option><option value="dr">Debits</option></select>
-        <span className="tnum ml-auto text-[12px] text-zinc-500">{num(rows.length)} of {num(tx.length)}</span>
+        <span className="tnum ml-auto text-[12px] text-zinc-500">
+          showing {num(shown.length)} of {num(tx.length)}{rows.length > CAP && <span className="ml-1 font-semibold text-amber-700">(display capped — full set is in the XLSX)</span>}
+        </span>
       </div>
       <DataTable
         cols={[
@@ -221,7 +225,7 @@ function Transactions({ P }) {
           { h: "Rail", cell: (t) => <Pill tone="accent">{t.rail}</Pill>, help: helpFor("transactions", "Rail") },
           { h: "Remitter / Beneficiary", cell: (t) => <span className="text-zinc-500">{t.remitter || ""}</span>, help: helpFor("transactions", "Remitter") },
         ]}
-        rows={rows}
+        rows={shown}
         empty={<Empty title="No matching transactions" hint="Clear the search or filters." />}
       />
     </div>

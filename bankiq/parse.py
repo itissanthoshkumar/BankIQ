@@ -510,7 +510,16 @@ def parse_sbi_soa(pdf):
             _flush(page)
             for line in text.splitlines():
                 line = line.strip()
-                if not line or _SOA_TYPE.match(line) or _SOA_PAGE.match(line):
+                if not line or _SOA_PAGE.match(line):
+                    continue
+                # a row-type marker ("DEP TFR" / "WDL CSH") introduces the NEXT
+                # transaction; when narration follows on the same line that text
+                # belongs to the next row too — never to the previous one.
+                mk = re.match(r"^(?:WDL|DEP)\s+[A-Z]{2,4}\b(.*)$", line)
+                if mk:
+                    rest = mk.group(1).strip()
+                    if rest:
+                        lead.append(rest)
                     continue
                 if _SOA_LEAD.match(line):
                     lead.append(line)
@@ -914,9 +923,11 @@ def parse_iob(pdf):
                 elif raw and texts and not _IOB_MONEY.match(texts[0]):
                     # continuation line — narration column only
                     cont = [w["text"] for w in ws if (w["x0"] + w["x1"]) / 2 < narr_limit]
-                    if cont and not re.search(r"Statement for the period|DATE|NARRATION|Page\b",
-                                              " ".join(cont), re.I):
-                        raw[-1]["frags"].append(" ".join(cont))
+                    j = " ".join(cont)
+                    if j and not re.search(r"Statement for the period|DATE|NARRATION|Page\b|"
+                                           r"denotes cancelled|computer generated|"
+                                           r"Statement Summary|Closing Balance", j, re.I):
+                        raw[-1]["frags"].append(j)
     txns = [{"date": r["date"], "desc": _join_frag(r["frags"]) or '""', "amount": r["amount"],
              "balance": r["balance"], "cheque": None} for r in raw]
     if not meta["period"] and txns:
