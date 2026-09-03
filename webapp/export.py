@@ -36,11 +36,19 @@ def build_payload(meta, rep):
             "remitter": I.remitter_of(t["desc"]),
         })
 
-    # monthwise analysis grid
-    months = [m.isoformat() for m in rep["months"]]
+    # Monthwise analysis grid.
+    # rep["months"] stops at the last COMPLETE month (that is the reference
+    # report's own convention and the rendered XLSX keeps it). On screen we show
+    # the trailing partial month too, marked with *, so the column totals tie
+    # back to the statement's own summary instead of silently under-reporting.
+    from bankiq.analyze import monthwise as _monthwise
+    from .digitap import _all_months
+    all_months = _all_months(txns)
+    months = [m.isoformat() for m in all_months]
+    partial = [m.isoformat() for m in all_months if m not in rep["months"]]
     analysis = [{"metric": label, "values": [round(v, 2) for v in series],
                  "total": round(sum(series), 2)}
-                for label, series in rep["monthwise"]]
+                for label, series in _monthwise(txns, all_months)]
 
     # top-5 parties per month
     def top5(d):
@@ -101,6 +109,7 @@ def build_payload(meta, rep):
         "grade": grade,
         "narrative": narrative,
         "months": months,
+        "partial_months": partial,
         "analysis": analysis,
         "transactions": tx_rows,
         "category_breakdown": I.category_breakdown(meta),

@@ -311,9 +311,15 @@ function Analysis({ P }) {
   return (
     <div>
       <SectionTitle help={helpFor("analysis", "The month columns")}>Monthwise analysis</SectionTitle>
+      {(P.partial_months || []).length > 0 && (
+        <p className="mb-2 text-[12px] text-zinc-500">
+          <span className="font-semibold text-zinc-700">*</span> {(P.partial_months || []).map(monthLabel).join(", ")} is a partial month — the statement ends mid-month.
+          It is included so these totals tie back to the statement's own summary.
+        </p>
+      )}
       <DataTable rows={P.analysis} cols={[
         { h: "Metric", cell: (r) => { const h = analysisHelp(r.metric); return <span className="flex items-center gap-1">{r.metric}{h && <Help {...h} />}</span>; } },
-        ...P.months.map((m, i) => ({ h: monthLabel(m), num: true, cell: (r) => num(r.values[i], /Amount/.test(r.metric) && !/Count/.test(r.metric) ? 2 : 0) })),
+        ...P.months.map((m, i) => ({ h: monthLabel(m) + ((P.partial_months || []).includes(m) ? "*" : ""), num: true, cell: (r) => num(r.values[i], /Amount/.test(r.metric) && !/Count/.test(r.metric) ? 2 : 0) })),
         { h: "Total", num: true, cell: (r) => <b>{num(r.total, /Amount/.test(r.metric) && !/Count/.test(r.metric) ? 2 : 0)}</b> },
       ]} />
     </div>
